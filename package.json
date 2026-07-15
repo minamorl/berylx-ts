@@ -1,0 +1,59 @@
+{
+  "name": "@minamorl/berylx",
+  "version": "0.2.0",
+  "description": "Graphable TypeScript workflows over focused, recoverable state.",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "MIGRATION.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minamorl/berylx-ts.git"
+  },
+  "homepage": "https://github.com/minamorl/berylx-ts#readme",
+  "bugs": {
+    "url": "https://github.com/minamorl/berylx-ts/issues"
+  },
+  "author": "minamorl",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "workflow",
+    "state",
+    "effect",
+    "freer",
+    "saga",
+    "result"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}
