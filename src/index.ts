@@ -16,6 +16,8 @@ export { Root, type RootEvent } from './root.js';
 export { Flow } from './flow.js';
 export { State } from './state.js';
 export { Merge, type Reducer } from './merge.js';
+export { Perform } from './perform.js';
+export { ControlSignal } from './control-signal.js';
 
 // --- combinators --------------------------------------------------
 export { Task, type TaskBlock } from './task.js';

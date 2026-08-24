@@ -40,6 +40,7 @@ export class Effect<A = unknown> {
     this.tag = tag;
     this.payload = payload;
     this.k = k;
+    Object.freeze(this);
   }
 
   /** 閉じた作用 (継続なし) = 従来の pure / return。 */

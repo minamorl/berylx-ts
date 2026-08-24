@@ -9,6 +9,7 @@ import { ResultOps, type Result } from './result.js';
 import { Focus } from './focus.js';
 import type { BerylxNode } from './node.js';
 import { EffectTree } from './effect-tree/index.js';
+import type { HandlerMap } from './darkcore.js';
 
 export class Flow {
   readonly focus: Focus;
@@ -26,8 +27,8 @@ export class Flow {
    * 実行の唯一のエントリ。合成子でも単発 Task でも EffectTree を必ず通す。
    * Task は葉として EffectTree の TASK handler が Task#call を呼ぶ。
    */
-  call(node: BerylxNode): Result {
-    return EffectTree.run(node, this.focus);
+  call(node: BerylxNode, handlers: HandlerMap = EffectTree.realHandlers()): Result {
+    return EffectTree.run(node, this.focus, handlers);
   }
 
   /** Ruby Flow#>> は call のエイリアス。 */
