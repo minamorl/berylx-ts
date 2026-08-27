@@ -32,14 +32,14 @@ import { Graph } from './graph.js';
 
 export type ParallelOnErr = 'short_circuit' | 'accumulate';
 
-export class Parallel implements BerylxNode {
-  readonly branches: readonly BerylxNode[];
-  readonly reducer: Reducer;
+export class Parallel<S = any> implements BerylxNode<S> {
+  readonly branches: readonly BerylxNode<S>[];
+  readonly reducer: Reducer<S>;
   readonly onErr: ParallelOnErr;
 
   constructor(
-    branches: BerylxNode[],
-    reducer: Reducer = Merge.strict(),
+    branches: BerylxNode<S>[],
+    reducer: Reducer<S> = Merge.strict<S>(),
     onErr: ParallelOnErr = 'short_circuit',
   ) {
     this.branches = Object.freeze(
@@ -49,31 +49,35 @@ export class Parallel implements BerylxNode {
     this.onErr = onErr;
   }
 
-  par(other: BerylxNode): BerylxNode {
-    return new Parallel([...this.branches, other], this.reducer, this.onErr);
+  par(other: BerylxNode<S>): BerylxNode<S> {
+    return new Parallel<S>([...this.branches, other], this.reducer, this.onErr);
   }
 
-  then(other: BerylxNode): BerylxNode {
-    return new Sequence([this, other]);
+  then(other: BerylxNode<S>): BerylxNode<S> {
+    return new Sequence<S>([this, other]);
   }
 
-  reduce(reducer: Reducer): Parallel {
-    return new Parallel([...this.branches], reducer, this.onErr);
+  reduce(reducer: Reducer<S>): Parallel<S> {
+    return new Parallel<S>([...this.branches], reducer, this.onErr);
   }
 
-  shortCircuit(): Parallel {
-    return new Parallel([...this.branches], this.reducer, 'short_circuit');
+  shortCircuit(): Parallel<S> {
+    return new Parallel<S>([...this.branches], this.reducer, 'short_circuit');
   }
 
-  accumulate(): Parallel {
-    return new Parallel([...this.branches], this.reducer, 'accumulate');
+  accumulate(): Parallel<S> {
+    return new Parallel<S>([...this.branches], this.reducer, 'accumulate');
   }
 
-  rescueWith(handler: BerylxNode | null, name?: string | null, block?: RescueHandlerBlock): BerylxNode {
-    return Sequence.buildRescue(this, handler, name, block);
+  rescueWith(
+    handler: BerylxNode<S> | null,
+    name?: string | null,
+    block?: RescueHandlerBlock<S>,
+  ): BerylxNode<S> {
+    return Sequence.buildRescue<S>(this, handler, name, block);
   }
 
-  call(focus: unknown): Result {
+  call(focus: unknown): Result<S> {
     return EffectTree.run(this, focus);
   }
 

@@ -8,7 +8,7 @@
 // ==================================================================
 
 import { ResultOps, Ok, Err, type Result } from './result.js';
-import { Focus } from './focus.js';
+import { Focus, type KeysAt } from './focus.js';
 import { Merge } from './merge.js';
 import type { BerylxNode } from './node.js';
 import { State } from './state.js';
@@ -20,29 +20,31 @@ export type RootEvent =
 
 type Subscriber = (event: RootEvent) => void;
 
-export class Root {
-  private value: Focus;
+export class Root<S = any> {
+  private value: Focus<S, []>;
   readonly history: RootEvent[];
   private subscribers: Subscriber[];
 
   constructor(value: unknown = {}) {
-    this.value = ResultOps.coerceFocus(value);
+    this.value = ResultOps.coerceFocus<S>(value);
     this.history = [];
     this.subscribers = [];
   }
 
   /** Ruby Root[value] / Root.new に対応。 */
-  static of(value: unknown = {}): Root {
+  static of<T>(value: T): Root<T>;
+  static of(): Root<any>;
+  static of(value: unknown = {}): Root<any> {
     return new Root(value);
   }
 
   /** Ruby Root#| : ノードを実行し、Ok ならコミットする。 */
-  pipe(other: BerylxNode): Result {
+  pipe(other: BerylxNode<S>): Result<S> {
     return this.call(other);
   }
 
-  call(node: BerylxNode): Result {
-    const result = new State(this.value).call(node);
+  call(node: BerylxNode<S>): Result<S> {
+    const result = new State<S>(this.value).call(node);
     return this.commitResult(result);
   }
 
@@ -56,24 +58,24 @@ export class Root {
     return this;
   }
 
-  state(): unknown {
+  state(): S {
     return this.value.toObject();
   }
 
-  toObject(): unknown {
+  toObject(): S {
     return this.state();
   }
 
-  toLay(): Focus {
+  toLay(): Focus<S, []> {
     return this.value;
   }
 
-  toState(): State {
-    return new State(this.value);
+  toState(): State<S> {
+    return new State<S>(this.value);
   }
 
   /** Ruby Root#[] : Focus を子キーへ掘る。 */
-  at(key: string | number | symbol): Focus {
+  at<K extends KeysAt<S, []>>(key: K): Focus<S, [K]> {
     return this.value.at(key);
   }
 
@@ -88,14 +90,14 @@ export class Root {
     };
   }
 
-  protected commitResult(result: Result): Result {
+  protected commitResult(result: Result<S>): Result<S> {
     if (result instanceof Ok) {
       this.commit(result.focus);
     }
     return result;
   }
 
-  private coerceCommit(value: unknown): Focus {
+  private coerceCommit(value: unknown): Focus<S, []> {
     if (value instanceof Root) {
       return value.toLay();
     }

@@ -21,13 +21,15 @@ import { Graph } from './graph.js';
 import type { RescueHandlerBlock } from './rescue.js';
 
 /** AsyncTask の本体。Focus を受け取り Focus/Result を Promise か同期で返す。 */
-export type AsyncTaskBlock = (focus: Focus) => Promise<Focus | Result | unknown> | Focus | Result | unknown;
+export type AsyncTaskBlock<S = any> = (
+  focus: Focus<S, []>,
+) => Promise<Focus<S, any> | Result<S> | unknown> | Focus<S, any> | Result<S> | unknown;
 
-export class AsyncTask implements BerylxNode, NamedNode {
+export class AsyncTask<S = any> implements BerylxNode<S>, NamedNode {
   readonly name: string;
-  private readonly block: AsyncTaskBlock;
+  private readonly block: AsyncTaskBlock<S>;
 
-  constructor(name: string, block: AsyncTaskBlock) {
+  constructor(name: string, block: AsyncTaskBlock<S>) {
     if (typeof block !== 'function') {
       throw new Error('AsyncTask requires a block');
     }
@@ -36,13 +38,13 @@ export class AsyncTask implements BerylxNode, NamedNode {
   }
 
   /** Ruby Task[name] { ... } の非同期版 smart constructor。 */
-  static of(name: string, block: AsyncTaskBlock): AsyncTask {
-    return new AsyncTask(name, block);
+  static of<S = any>(name: string, block: AsyncTaskBlock<S>): AsyncTask<S> {
+    return new AsyncTask<S>(name, block);
   }
 
   /** block を await し、Focus/Result へ正規化する。例外は Err に写す。 */
-  async callAsync(focus: unknown): Promise<Result> {
-    const root = ResultOps.coerceFocus(focus);
+  async callAsync(focus: unknown): Promise<Result<S>> {
+    const root = ResultOps.coerceFocus<S>(focus);
     try {
       const result = ResultOps.normalize(await this.block(root));
       return result instanceof Err ? this.withTaskContext(result) : result;
@@ -57,27 +59,31 @@ export class AsyncTask implements BerylxNode, NamedNode {
   }
 
   /** 同期実行はできない。async 実行系 (EffectTree.runAsync / callAsync) を使う。 */
-  call(_focus: unknown): Result {
+  call(_focus: unknown): Result<S> {
     throw new Error(
       `AsyncTask "${this.name}" is asynchronous: run it with EffectTree.runAsync or callAsync, not the sync path`,
     );
   }
 
-  then(other: BerylxNode): BerylxNode {
-    return new Sequence([this, other]);
+  then(other: BerylxNode<S>): BerylxNode<S> {
+    return new Sequence<S>([this, other]);
   }
 
-  par(other: BerylxNode): BerylxNode {
-    return new Parallel([this, other]);
+  par(other: BerylxNode<S>): BerylxNode<S> {
+    return new Parallel<S>([this, other]);
   }
 
   /** Ruby Task#| は self >> other。 */
-  pipe(other: BerylxNode): BerylxNode {
+  pipe(other: BerylxNode<S>): BerylxNode<S> {
     return this.then(other);
   }
 
-  rescueWith(handler: BerylxNode | null, name?: string | null, block?: RescueHandlerBlock): BerylxNode {
-    return Sequence.buildRescue(this, handler, name, block);
+  rescueWith(
+    handler: BerylxNode<S> | null,
+    name?: string | null,
+    block?: RescueHandlerBlock<S>,
+  ): BerylxNode<S> {
+    return Sequence.buildRescue<S>(this, handler, name, block);
   }
 
   compile(): Graph {
@@ -88,7 +94,7 @@ export class AsyncTask implements BerylxNode, NamedNode {
     return [this];
   }
 
-  private withTaskContext(result: Err): Err {
+  private withTaskContext(result: Err<S>): Err<S> {
     const error = result.error.failedNode ? result.error : result.error.prependTrace(this.name);
     return new Err(result.focus, error);
   }

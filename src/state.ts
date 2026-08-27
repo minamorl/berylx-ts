@@ -14,35 +14,37 @@ import { Root } from './root.js';
 import { Flow } from './flow.js';
 
 /** call を持つ berylx ノード。 */
-type Nodeish = BerylxNode;
+type Nodeish<S = any> = BerylxNode<S>;
 
-export class State {
-  readonly lay: Focus;
-  readonly node: Nodeish | null;
+export class State<S = any> {
+  readonly lay: Focus<S, []>;
+  readonly node: Nodeish<S> | null;
 
-  constructor(lay: unknown, node: Nodeish | null = null) {
-    this.lay = ResultOps.coerceFocus(lay);
+  constructor(lay: unknown, node: Nodeish<S> | null = null) {
+    this.lay = ResultOps.coerceFocus<S>(lay);
     this.node = node;
   }
 
   /** Ruby State[value] : Root 経由で lay を作る。 */
-  static of(value: unknown = {}): State {
+  static of<T>(value: T): State<T>;
+  static of(): State<any>;
+  static of(value: unknown = {}): State<any> {
     return new State(Root.of(value).toLay());
   }
 
   /** Ruby State#| : ノードを即実行する。 */
-  pipe(other: Nodeish): Result {
+  pipe(other: Nodeish<S>): Result<S> {
     return this.call(this.coerceNode(other));
   }
 
   /** Ruby State#& : ノードを蓄積して新しい State を返す。 */
-  and(other: Nodeish): State {
+  and(other: Nodeish<S>): State<S> {
     const nextNode = this.coerceNode(other);
-    return new State(this.lay, this.node ? this.node.then(nextNode) : nextNode);
+    return new State<S>(this.lay, this.node ? this.node.then(nextNode) : nextNode);
   }
 
   /** ノードを実行する。node 省略時は蓄積済みノードを走らせる。 */
-  call(node: Nodeish | null = null): Result {
+  call(node: Nodeish<S> | null = null): Result<S> {
     const target = node ? this.coerceNode(node) : this.node;
     if (!target) {
       throw new Error('State has no task to run');
@@ -50,11 +52,11 @@ export class State {
     return Flow.of(this.lay).call(target);
   }
 
-  toLay(): Focus {
+  toLay(): Focus<S, []> {
     return this.lay;
   }
 
-  private coerceNode(taskish: Nodeish): Nodeish {
+  private coerceNode(taskish: Nodeish<S>): Nodeish<S> {
     if (taskish && typeof (taskish as { call?: unknown }).call === 'function') {
       return taskish;
     }

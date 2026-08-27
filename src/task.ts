@@ -15,13 +15,13 @@ import { Graph } from './graph.js';
 import type { RescueHandlerBlock } from './rescue.js';
 
 /** Task の本体。Focus を受け取り Focus か Result を返す。 */
-export type TaskBlock = (focus: Focus) => Focus | Result | unknown;
+export type TaskBlock<S = any> = (focus: Focus<S, []>) => Focus<S, any> | Result<S> | unknown;
 
-export class Task implements BerylxNode, NamedNode {
+export class Task<S = any> implements BerylxNode<S>, NamedNode {
   readonly name: string;
-  private readonly block: TaskBlock;
+  private readonly block: TaskBlock<S>;
 
-  constructor(name: string, block: TaskBlock) {
+  constructor(name: string, block: TaskBlock<S>) {
     if (typeof block !== 'function') {
       throw new Error('Task requires a block');
     }
@@ -30,12 +30,12 @@ export class Task implements BerylxNode, NamedNode {
   }
 
   /** Ruby Task[name] { ... } / Task.build に対応。 */
-  static of(name: string, block: TaskBlock): Task {
+  static of<S = any>(name: string, block: TaskBlock<S>): Task<S> {
     return new Task(name, block);
   }
 
-  call(focus: unknown): Result {
-    const root = ResultOps.coerceFocus(focus);
+  call(focus: unknown): Result<S> {
+    const root = ResultOps.coerceFocus<S>(focus);
     try {
       const result = ResultOps.normalize(this.block(root));
       return result instanceof Err ? this.withTaskContext(result) : result;
@@ -49,20 +49,20 @@ export class Task implements BerylxNode, NamedNode {
     }
   }
 
-  then(other: BerylxNode): BerylxNode {
-    return new Sequence([this, other]);
+  then(other: BerylxNode<S>): BerylxNode<S> {
+    return new Sequence<S>([this, other]);
   }
 
-  par(other: BerylxNode): BerylxNode {
-    return new Parallel([this, other]);
+  par(other: BerylxNode<S>): BerylxNode<S> {
+    return new Parallel<S>([this, other]);
   }
 
   /** Ruby Task#| は self >> other。 */
-  pipe(other: BerylxNode): BerylxNode {
+  pipe(other: BerylxNode<S>): BerylxNode<S> {
     return this.then(other);
   }
 
-  rescueWith(handler: BerylxNode | null, name?: string | null, block?: RescueHandlerBlock): BerylxNode {
+  rescueWith(handler: BerylxNode<S> | null, name?: string | null, block?: RescueHandlerBlock): BerylxNode<S> {
     return Sequence.buildRescue(this, handler, name, block);
   }
 
@@ -74,7 +74,7 @@ export class Task implements BerylxNode, NamedNode {
     return [this];
   }
 
-  private withTaskContext(result: Err): Err {
+  private withTaskContext(result: Err<S>): Err<S> {
     const error = result.error.failedNode ? result.error : result.error.prependTrace(this.name);
     return new Err(result.focus, error);
   }

@@ -19,9 +19,9 @@ type Maybe<T> = T | typeof MISSING;
 
 type PlainObject = Record<string, unknown>;
 
-export type Reducer =
-  | ((left: Focus, right: Focus) => Focus)
-  | ((left: Focus, right: Focus, base: Focus) => Focus);
+export type Reducer<S = any> =
+  | ((left: Focus<S, []>, right: Focus<S, []>) => Focus<S, []>)
+  | ((left: Focus<S, []>, right: Focus<S, []>, base: Focus<S, []>) => Focus<S, []>);
 
 function asObject(value: unknown): PlainObject {
   if (value != null && typeof value === 'object' && !Array.isArray(value)) {
@@ -35,24 +35,26 @@ function isObject(value: unknown): value is PlainObject {
 }
 
 export const Merge = {
-  keepLeft(): Reducer {
-    return (left: Focus, _right: Focus) => left;
+  keepLeft<S = any>(): Reducer<S> {
+    return (left: Focus<S, []>, _right: Focus<S, []>) => left;
   },
 
-  keepRight(): Reducer {
-    return (_left: Focus, right: Focus) => right;
+  keepRight<S = any>(): Reducer<S> {
+    return (_left: Focus<S, []>, right: Focus<S, []>) => right;
   },
 
-  deep(): Reducer {
-    return (left: Focus, right: Focus) =>
-      Focus.of(deepMerge(asObject(left.toObject()), asObject(right.toObject())));
+  deep<S = any>(): Reducer<S> {
+    return (left: Focus<S, []>, right: Focus<S, []>) =>
+      Focus.of(deepMerge(asObject(left.toObject()), asObject(right.toObject()))) as Focus<S, []>;
   },
 
-  strict(): Reducer {
-    const reducer = (left: Focus, right: Focus, base: Focus) =>
-      Focus.of(strictMerge(asObject(left.toObject()), asObject(right.toObject()), asObject(base.toObject())));
+  strict<S = any>(): Reducer<S> {
+    const reducer = (left: Focus<S, []>, right: Focus<S, []>, base: Focus<S, []>) =>
+      Focus.of(
+        strictMerge(asObject(left.toObject()), asObject(right.toObject()), asObject(base.toObject())),
+      ) as Focus<S, []>;
     // arity 3 を length で判別できるよう関数を返す (Ruby の reducer.arity == 3 相当)。
-    return reducer as Reducer;
+    return reducer as Reducer<S>;
   },
 
   deepMerge,
