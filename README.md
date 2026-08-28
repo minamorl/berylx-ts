@@ -50,6 +50,38 @@ Ruby 版の演算子 (`>>` `&` `|`) は TS ではメソッドへ写している:
 | `When[:x] { }`  | `When.of('x', () => …)`| 分岐の述語               |
 | `arm \| Else`   | `arm.or(Else.then(…))` | arm の連結               |
 
+## 並列の merge algebra
+
+`a.par(b)` は全 branch を**同じ base snapshot から**走らせ、返ってきた Focus を
+reducer で畳む。base があるので、これは binary な two-way merge ではなく
+base `b` を持つ three-way join `μ_b(left, right)` である。既定 reducer の
+`Merge.strict()` は次の法則を満たす:
+
+| 法則 | 意味 |
+| ---- | ---- |
+| `μ_b(b, x) = x` | 何もしない左 branch は右の結果を消さない |
+| `μ_b(x, b) = x` | 何もしない右 branch は左の結果を消さない |
+| `Δ(l,b) ∩ Δ(r,b) = ∅ ⇒ 両方を保存` | 別々の path への更新は両方残る |
+| 同一 path の非互換更新 | `Err(merge_conflict)` |
+
+```ts
+const setA = Task.of('setA', (f) => f.at('a').set(1));
+const setB = Task.of('setB', (f) => f.at('b').set(1));
+
+Flow.of(Lay.of({ a: 0, b: 0 })).call(setA.par(setB));
+// => Ok({ a: 1, b: 1 })   両方の更新が残る
+
+const paid  = Task.of('paid',  (f) => f.at('status').set('paid'));
+const trial = Task.of('trial', (f) => f.at('status').set('trial'));
+
+Flow.of(Lay.of({ status: null })).call(paid.par(trial));
+// => Err({ status: null }, merge_conflict at status)
+```
+
+`Merge.deep()` は base を見ない right-biased な two-way merge なので、この
+法則を**満たさない** (既存キーへの disjoint update と右単位律を落とす)。
+right wins を明示的に欲しいときだけ `.reduce(Merge.deep())` で選ぶこと。
+
 ## 実行基盤
 
 上の表層 API があなたの書くすべて。その下では、あらゆる workflow が単一の
@@ -146,7 +178,7 @@ graph.toDot();  // => 'digraph "berylx" { ... }'
 - 合成子: `Task` / `AsyncTask` / `Sequence` / `Parallel` / `When` / `Else` /
   `Branch` / `Catch` / `Rescue` / `Workflow`
 - 結果: `Ok` / `Err` / `ResultOps` / `BerylxError`
-- reducer: `Merge` (`keepLeft` / `keepRight` / `deep` / `strict`)
+- reducer: `Merge` (`strict` — 既定 / `deep` / `keepLeft` / `keepRight`)
 - 基盤: `EffectTree` (同期 `run` / 非同期 `runAsync`) / `Darkcore`
 - グラフ: `Graph#toDot()` / `Graph#toMermaid()`
 - cray 互換ブリッジ: `attachRoot` / `fromCrayResult` / `toCrayResult` /
