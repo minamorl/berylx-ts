@@ -15,11 +15,14 @@ import type { BerylxNode, NamedNode } from './node.js';
 import { Sequence } from './sequence.js';
 import { Parallel } from './parallel.js';
 import { EffectTree } from './effect-tree/index.js';
+import { Perform } from './perform.js';
+import { ControlSignal } from './control-signal.js';
 
-/** 回復ブロック handler の本体。error と focus を受け取り Focus/Result を返す。 */
+/** 回復ブロック handler。本体の第三引数には現在の handler map の Perform が渡る。 */
 export type RescueHandlerBlock<S = any> = (
   error: unknown,
   focus: Focus<S, []>,
+  performer: Perform,
 ) => Focus<S, any> | Result<S> | unknown;
 
 /** ブロックで回復する handler (Ruby RescueBlock)。 */
@@ -33,12 +36,18 @@ export class RescueBlock<S = any> implements NamedNode {
   }
 
   /** error_result から回復を試みる。error は cause 優先 (無ければ構造化エラー)。 */
-  call(focus: Focus<S, []>, errorResult: Err<S>): Result<S> {
+  call(focus: Focus<S, []>, errorResult: Err<S>, performer?: Perform): Result<S> {
     try {
       const errArg = errorResult.error.cause ?? errorResult.error;
-      const result = ResultOps.normalize(this.block(errArg, focus));
+      const output = this.effectful()
+        ? this.block(errArg, focus, performer as Perform)
+        : (this.block as (error: unknown, focus: Focus) => unknown)(errArg, focus);
+      const result = ResultOps.normalize(output);
       return result instanceof Err ? this.withRescueContext(result) : result;
     } catch (e) {
+      if (e instanceof ControlSignal) {
+        throw e;
+      }
       const err = e as Error;
       return ResultOps.err(focus, (err && err.name) || 'Error', (err && err.message) || String(e), {
         cause: e,
@@ -50,6 +59,11 @@ export class RescueBlock<S = any> implements NamedNode {
 
   nodes(): NamedNode[] {
     return [this];
+  }
+
+  /** 3 個以上の仮引数を宣言した recovery block だけが作用を要求する。 */
+  effectful(): boolean {
+    return this.block.length >= 3;
   }
 
   private withRescueContext(result: Err<S>): Err<S> {

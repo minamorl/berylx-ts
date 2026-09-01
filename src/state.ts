@@ -12,6 +12,8 @@ import { Focus } from './focus.js';
 import type { BerylxNode } from './node.js';
 import { Root } from './root.js';
 import { Flow } from './flow.js';
+import { EffectTree } from './effect-tree/index.js';
+import type { HandlerMap } from './darkcore.js';
 
 /** call を持つ berylx ノード。 */
 type Nodeish<S = any> = BerylxNode<S>;
@@ -44,12 +46,15 @@ export class State<S = any> {
   }
 
   /** ノードを実行する。node 省略時は蓄積済みノードを走らせる。 */
-  call(node: Nodeish<S> | null = null): Result<S> {
+  call(
+    node: Nodeish<S> | null = null,
+    handlers: HandlerMap = EffectTree.realHandlers(),
+  ): Result<S> {
     const target = node ? this.coerceNode(node) : this.node;
     if (!target) {
       throw new Error('State has no task to run');
     }
-    return Flow.of(this.lay).call(target);
+    return Flow.of(this.lay).call(target, handlers);
   }
 
   toLay(): Focus<S, []> {

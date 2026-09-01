@@ -22,7 +22,8 @@ type TraceInput = ReadonlyArray<TraceElement | null | undefined> | undefined;
 
 export class BerylxError extends Error {
   readonly code: string;
-  readonly cause: unknown;
+  // ES2022 の lib では Error.cause が存在するので override が要る (ES2020 では不要だった)。
+  override readonly cause: unknown;
   readonly failedNode: string | null;
   readonly trace: readonly string[];
   readonly parallelErrors: readonly BerylxError[];

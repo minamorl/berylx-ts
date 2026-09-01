@@ -15,10 +15,12 @@ import { BerylxError } from '../error.js';
 import { Focus } from '../focus.js';
 import type { Parallel } from '../parallel.js';
 import type { Branch, Predicate } from '../branch.js';
-import type { Rescue, RescueHandler } from '../rescue.js';
+import type { Rescue, RescueHandler, Catch } from '../rescue.js';
 import { RescueBlock } from '../rescue.js';
-import { runSubtree, type DryRun } from './index.js';
+import { runSubtree, RECOVER, type DryRun } from './index.js';
 import type { Reducer } from '../merge.js';
+import { Perform } from '../perform.js';
+import { ControlSignal } from '../control-signal.js';
 
 // ----------------------------------------------------------------
 // Parallel — Parallel#call と同一セマンティクス。各 branch を副木として実行し、
@@ -30,7 +32,18 @@ import type { Reducer } from '../merge.js';
 // どの Err を返すか / merge 結果は Ruby と一致する。
 // ----------------------------------------------------------------
 export function runParallel(node: Parallel, focus: Focus, handlers: Darkcore.HandlerMap): Result {
-  const branchResults = node.branches.map((branch) => runSubtree(branch, focus, handlers));
+  const branchResults: Result[] = [];
+  const thrown: unknown[] = [];
+  for (const branch of node.branches) {
+    try {
+      branchResults.push(runSubtree(branch, focus, handlers));
+    } catch (error) {
+      thrown.push(error);
+    }
+  }
+  if (thrown.length > 0) {
+    throw thrown[0];
+  }
   const failures = branchResults.filter((r): r is Err => r instanceof Err);
 
   if (failures.length > 0) {
@@ -62,6 +75,9 @@ export function parallelMerge(node: Parallel, focus: Focus, branchResults: Resul
         focus,
       );
   } catch (e) {
+    if (e instanceof ControlSignal) {
+      throw e;
+    }
     return ResultOps.err(focus, BerylxError.from(e, { failedNode: 'parallel', trace: ['parallel'] })) as Err;
   }
 }
@@ -119,7 +135,34 @@ export function runRescue(node: Rescue, focus: Focus, handlers: Darkcore.Handler
   if (result instanceof Ok) {
     return result;
   }
-  return recover(node.handler, result as Err);
+  return dispatchRecover(node, result as Err, handlers);
+}
+
+/** Rescue/Catch の回復も RECOVER effect として現在の map へ dispatch する。 */
+export function dispatchRecover(
+  node: Rescue,
+  errorResult: Err,
+  handlers: Darkcore.HandlerMap,
+): Result {
+  return Darkcore.fold(
+    Darkcore.op(RECOVER, [node, errorResult]),
+    (value) => value as Result,
+    handlers,
+  );
+}
+
+/** RECOVER の real interpreter。回復の副木にも同じ handler map を渡す。 */
+export function realRecover(
+  node: Rescue | Catch,
+  errorResult: Err,
+  handlers: Darkcore.HandlerMap,
+): Result {
+  const recovery = node.handler;
+  const handlerResult =
+    recovery instanceof RescueBlock
+      ? recovery.call(errorResult.focus, errorResult, new Perform(handlers))
+      : runSubtree(recovery, errorResult.focus, handlers);
+  return handlerResult instanceof Err ? rescueFailed(errorResult, handlerResult) : handlerResult;
 }
 
 /**

@@ -12,6 +12,8 @@ import { Focus, type KeysAt } from './focus.js';
 import { Merge } from './merge.js';
 import type { BerylxNode } from './node.js';
 import { State } from './state.js';
+import { EffectTree } from './effect-tree/index.js';
+import type { HandlerMap } from './darkcore.js';
 
 /** subscribe に流れるイベント。 */
 export type RootEvent =
@@ -43,8 +45,8 @@ export class Root<S = any> {
     return this.call(other);
   }
 
-  call(node: BerylxNode<S>): Result<S> {
-    const result = new State<S>(this.value).call(node);
+  call(node: BerylxNode<S>, handlers: HandlerMap = EffectTree.realHandlers()): Result<S> {
+    const result = new State<S>(this.value).call(node, handlers);
     return this.commitResult(result);
   }
 

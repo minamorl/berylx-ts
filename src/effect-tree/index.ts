@@ -34,12 +34,22 @@ import { Parallel } from '../parallel.js';
 import { Branch } from '../branch.js';
 import { Rescue, Catch } from '../rescue.js';
 import type { BerylxNode } from '../node.js';
+import { Perform } from '../perform.js';
 
 /** berylx 合成子を darkcore Effect 木にディスパッチするためのタグ。 */
 export const TASK = 'berylx_task';
 export const PARALLEL = 'berylx_parallel';
 export const BRANCH = 'berylx_branch';
 export const RESCUE = 'berylx_rescue';
+export const RECOVER = 'berylx_recover';
+
+const RESERVED_TAGS = [TASK, PARALLEL, BRANCH, RESCUE, RECOVER] as const;
+
+export type AroundWrapper = (
+  tag: string,
+  payload: unknown,
+  inner: Darkcore.HandlerMap[string],
+) => unknown;
 
 /** dry_run の戻り値: 最終結果 (実行しないので常に Ok) と、列挙された計画。 */
 export interface DryRun {
@@ -113,7 +123,7 @@ function compileCatch(step: Catch, prev: Result): Darkcore.Effect<unknown> {
   if (!(prev instanceof Err) || !step.catches(prev)) {
     return Darkcore.pure(prev);
   }
-  return Darkcore.pure(recover(step.handler, prev));
+  return Darkcore.op(RECOVER, [step, prev]);
 }
 
 /**
@@ -143,30 +153,63 @@ export function run(
  * 合成子 handler は自分自身 (realHandlers) を副木実行に渡すため、木は同じ圏
  * (real) のまま再帰する。
  */
-export function realHandlers(): Darkcore.HandlerMap {
-  return {
-    [TASK]: (payload) => realTask(payload as [Task, Focus]),
-    [PARALLEL]: (payload) => realParallel(payload as [Parallel, Focus]),
-    [BRANCH]: (payload) => realBranch(payload as [Branch, Focus]),
-    [RESCUE]: (payload) => realRescue(payload as [Rescue, Focus]),
+export function realHandlers(
+  effects: Darkcore.HandlerMap = {},
+  subtree?: Darkcore.HandlerMap,
+): Darkcore.HandlerMap {
+  const collisions = Object.keys(effects).filter((tag) =>
+    (RESERVED_TAGS as readonly string[]).includes(tag),
+  );
+  if (collisions.length > 0) {
+    throw new Error(`effect tags collide with berylx tags: ${JSON.stringify(collisions)}`);
+  }
+
+  const handlers: Darkcore.HandlerMap = {};
+  const current = () => subtree ?? handlers;
+  handlers[TASK] = (payload) => realTask(payload as [Task | AsyncTask, Focus], current());
+  handlers[PARALLEL] = (payload) => {
+    const [node, focus] = payload as [Parallel, Focus];
+    return runParallel(node, focus, current());
   };
+  handlers[BRANCH] = (payload) => {
+    const [node, focus] = payload as [Branch, Focus];
+    return runBranch(node, focus, current());
+  };
+  handlers[RESCUE] = (payload) => {
+    const [node, focus] = payload as [Rescue, Focus];
+    return runRescue(node, focus, current());
+  };
+  handlers[RECOVER] = (payload) => {
+    const [node, errorResult] = payload as [Rescue | Catch, Err];
+    return realRecover(node, errorResult, current());
+  };
+  Object.assign(handlers, effects);
+  return handlers;
 }
 
-function realTask(payload: [Task, Focus]): Result {
+function realTask(payload: [Task | AsyncTask, Focus], handlers: Darkcore.HandlerMap): Result {
   const [task, focus] = payload;
+  if (task instanceof Task) {
+    return task.call(focus, task.effectful() ? new Perform(handlers) : undefined);
+  }
   return task.call(focus);
 }
 
-function realParallel(payload: [Parallel, Focus]): Result {
-  return runParallel(payload[0], payload[1], realHandlers());
-}
+/** 全 handler を aspect で包み、包んだ map 自身を副木と回復へ伝播させる。 */
+export function around(
+  effects: Darkcore.HandlerMap = {},
+  wrapper?: AroundWrapper,
+): Darkcore.HandlerMap {
+  if (!wrapper) {
+    throw new Error('around requires a wrapper');
+  }
 
-function realBranch(payload: [Branch, Focus]): Result {
-  return runBranch(payload[0], payload[1], realHandlers());
-}
-
-function realRescue(payload: [Rescue, Focus]): Result {
-  return runRescue(payload[0], payload[1], realHandlers());
+  const wrapped: Darkcore.HandlerMap = {};
+  const base = realHandlers(effects, wrapped);
+  for (const [tag, handler] of Object.entries(base)) {
+    wrapped[tag] = (payload) => wrapper(tag, payload, handler);
+  }
+  return wrapped;
 }
 
 /**
@@ -183,6 +226,7 @@ import {
   runParallel,
   runBranch,
   runRescue,
+  realRecover,
   recover,
   branchMatches,
 } from './combinators.js';
@@ -191,9 +235,11 @@ import {
   runAsync,
   runSubtreeAsync,
   asyncRealHandlers,
+  aroundAsync,
   runParallelAsync,
   runBranchAsync,
   runRescueAsync,
+  realRecoverAsync,
 } from './async.js';
 
 export const EffectTree = {
@@ -201,13 +247,16 @@ export const EffectTree = {
   PARALLEL,
   BRANCH,
   RESCUE,
+  RECOVER,
   build,
   run,
   realHandlers,
+  around,
   runSubtree,
   runParallel,
   runBranch,
   runRescue,
+  realRecover,
   recover,
   branchMatches,
   dryRun,
@@ -215,17 +264,21 @@ export const EffectTree = {
   runAsync,
   runSubtreeAsync,
   asyncRealHandlers,
+  aroundAsync,
   runParallelAsync,
   runBranchAsync,
   runRescueAsync,
+  realRecoverAsync,
 };
 
-export { runParallel, runBranch, runRescue, recover, branchMatches, dryRun };
+export { runParallel, runBranch, runRescue, realRecover, recover, branchMatches, dryRun };
 export {
   runAsync,
   runSubtreeAsync,
   asyncRealHandlers,
+  aroundAsync,
   runParallelAsync,
   runBranchAsync,
   runRescueAsync,
+  realRecoverAsync,
 } from './async.js';

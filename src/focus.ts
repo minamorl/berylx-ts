@@ -64,6 +64,102 @@ function isPlainRecord(value: unknown): value is Record<PathKey, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
+function isDeepFreezeTarget(value: unknown): value is unknown[] | Record<PathKey, unknown> {
+  return Array.isArray(value) || isPlainRecord(value);
+}
+
+function enumerableOwnKeys(value: object): PathKey[] {
+  return Reflect.ownKeys(value).filter((key) => Object.prototype.propertyIsEnumerable.call(value, key));
+}
+
+/** Ruby Freeze.deep と同じ対象を defensive copy し、循環を保ったまま深く凍結する。 */
+function copyAndDeepFreeze(value: unknown): unknown {
+  const deeplyFrozen = new WeakMap<object, boolean>();
+  const activeCopies = new WeakMap<object, unknown[] | Record<PathKey, unknown>>();
+
+  const isAlreadyDeeplyFrozen = (current: unknown, visiting: WeakSet<object>): boolean => {
+    if (!isDeepFreezeTarget(current)) {
+      return true;
+    }
+
+    const cached = deeplyFrozen.get(current);
+    if (cached !== undefined) {
+      return cached;
+    }
+    // Ruby has no cycle handling; conservatively copying a cycle keeps TS finite and defensive.
+    if (visiting.has(current)) {
+      return false;
+    }
+
+    visiting.add(current);
+    let result = Object.isFrozen(current);
+    if (result) {
+      if (Array.isArray(current)) {
+        for (let index = 0; index < current.length && result; index += 1) {
+          if (Object.prototype.hasOwnProperty.call(current, index)) {
+            result = isAlreadyDeeplyFrozen(current[index], visiting);
+          }
+        }
+      } else {
+        for (const key of enumerableOwnKeys(current)) {
+          if (!isAlreadyDeeplyFrozen(current[key], visiting)) {
+            result = false;
+            break;
+          }
+        }
+      }
+    }
+    visiting.delete(current);
+    deeplyFrozen.set(current, result);
+    return result;
+  };
+
+  const copy = (current: unknown): unknown => {
+    // JS 固有の Map/Set/Date/TypedArray/class instances は Ruby のその他の object と同様に触れない。
+    if (!isDeepFreezeTarget(current)) {
+      return current;
+    }
+    if (isAlreadyDeeplyFrozen(current, new WeakSet())) {
+      return current;
+    }
+
+    const existing = activeCopies.get(current);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    if (Array.isArray(current)) {
+      const rebuilt: unknown[] = new Array(current.length);
+      activeCopies.set(current, rebuilt);
+      for (let index = 0; index < current.length; index += 1) {
+        if (Object.prototype.hasOwnProperty.call(current, index)) {
+          rebuilt[index] = copy(current[index]);
+        }
+      }
+      const frozen = Object.freeze(rebuilt);
+      activeCopies.delete(current);
+      return frozen;
+    }
+
+    // Ruby deep_hash と同様、prototype や property descriptor は素の record へ正規化する。
+    const rebuilt: Record<PathKey, unknown> = {};
+    activeCopies.set(current, rebuilt);
+    for (const key of enumerableOwnKeys(current)) {
+      Object.defineProperty(rebuilt, key, {
+        configurable: true,
+        enumerable: true,
+        value: copy(current[key]),
+        writable: true,
+      });
+    }
+    const frozen = Object.freeze(rebuilt);
+    activeCopies.delete(current);
+    return frozen;
+  };
+
+  return copy(value);
+}
+
 /**
  * 焦点つき不変状態。
  *
@@ -81,7 +177,7 @@ export class Focus<S = any, P extends readonly PathKey[] = []> {
   readonly path: P;
 
   constructor(value: unknown = {}, path: readonly PathKey[] = []) {
-    this.value = value as S;
+    this.value = copyAndDeepFreeze(value) as S;
     this.path = Object.freeze([...path]) as unknown as P;
   }
 
@@ -179,7 +275,7 @@ export class Focus<S = any, P extends readonly PathKey[] = []> {
     return ResultOps.err(this, code, message, { cause: options.cause });
   }
 
-  /** ルートの生値を返す (Ruby Focus#to_h)。 */
+  /** Ruby Focus#to_h と同様、deep-frozen なルート値を返す。 */
   toObject(): S {
     return this.value;
   }

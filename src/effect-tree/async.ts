@@ -5,8 +5,8 @@
 // フェーズ 3-a: 同期の real interpreter (index.ts / combinators.ts) と同じ
 // Effect 木・同じ berylx 圏の algebra (短絡・merge・回復) を共有し、Task の実行
 // だけを await 対応にする。AsyncTask は callAsync で、通常 Task は同期 call で
-// 実行する (混在可)。Parallel は Promise.all ベースで、short_circuit /
-// accumulate / reducer merge は同期版のヘルパをそのまま再利用する。
+// 実行する (混在可)。Parallel は Promise.allSettled で全 branch を待ち、
+// short_circuit / accumulate / reducer merge は同期版の helper を再利用する。
 //
 // 既存の同期経路 (run / realHandlers) は一切変更しない。async はあくまで
 // handler マップ差し替えで後付けする aspect (spec: aspect_via_handler)。
@@ -19,37 +19,80 @@ import { Task } from '../task.js';
 import { AsyncTask } from '../async-task.js';
 import { Parallel } from '../parallel.js';
 import { Branch } from '../branch.js';
-import { Rescue, RescueBlock, type RescueHandler } from '../rescue.js';
+import { Rescue, RescueBlock, Catch } from '../rescue.js';
 import type { BerylxNode } from '../node.js';
-import { build, TASK, PARALLEL, BRANCH, RESCUE } from './index.js';
+import { build, TASK, PARALLEL, BRANCH, RESCUE, RECOVER } from './index.js';
 import {
   parallelHandleFailures,
   parallelMerge,
   branchMatches,
   rescueFailed,
 } from './combinators.js';
+import { Perform } from '../perform.js';
+
+export type AsyncAroundWrapper = (
+  tag: string,
+  payload: unknown,
+  inner: Darkcore.AsyncHandlerMap[string],
+) => unknown | Promise<unknown>;
 
 /**
  * async 実実行の handler マップ: Task/AsyncTask を実行し、合成子は非同期副木として
  * 実行しつつ berylx 圏の algebra で結果封筒を合成する。合成子 handler は自分自身
  * (asyncRealHandlers) を副木実行に渡すため、木は同じ async 圏のまま再帰する。
  */
-export function asyncRealHandlers(): Darkcore.AsyncHandlerMap {
-  return {
-    [TASK]: (payload) => asyncRealTask(payload as [Task | AsyncTask, Focus]),
-    [PARALLEL]: (payload) => {
-      const [node, focus] = payload as [Parallel, Focus];
-      return runParallelAsync(node, focus, asyncRealHandlers());
-    },
-    [BRANCH]: (payload) => {
-      const [node, focus] = payload as [Branch, Focus];
-      return runBranchAsync(node, focus, asyncRealHandlers());
-    },
-    [RESCUE]: (payload) => {
-      const [node, focus] = payload as [Rescue, Focus];
-      return runRescueAsync(node, focus, asyncRealHandlers());
-    },
+export function asyncRealHandlers(
+  effects: Darkcore.AsyncHandlerMap = {},
+  subtree?: Darkcore.AsyncHandlerMap,
+): Darkcore.AsyncHandlerMap {
+  // index.ts との循環 import があるため、live binding は呼出時に読む。
+  const reservedTags = [TASK, PARALLEL, BRANCH, RESCUE, RECOVER];
+  const collisions = Object.keys(effects).filter((tag) =>
+    reservedTags.includes(tag),
+  );
+  if (collisions.length > 0) {
+    throw new Error(`effect tags collide with berylx tags: ${JSON.stringify(collisions)}`);
+  }
+
+  const handlers: Darkcore.AsyncHandlerMap = {};
+  const current = () => subtree ?? handlers;
+  handlers[TASK] = (payload) =>
+    asyncRealTask(payload as [Task | AsyncTask, Focus], current());
+  handlers[PARALLEL] = (payload) => {
+    const [node, focus] = payload as [Parallel, Focus];
+    return runParallelAsync(node, focus, current());
   };
+  handlers[BRANCH] = (payload) => {
+    const [node, focus] = payload as [Branch, Focus];
+    return runBranchAsync(node, focus, current());
+  };
+  handlers[RESCUE] = (payload) => {
+    const [node, focus] = payload as [Rescue, Focus];
+    return runRescueAsync(node, focus, current());
+  };
+  handlers[RECOVER] = (payload) => {
+    const [node, errorResult] = payload as [Rescue | Catch, Err];
+    return realRecoverAsync(node, errorResult, current());
+  };
+  Object.assign(handlers, effects);
+  return handlers;
+}
+
+/** async handler を aspect で包み、包んだ map 自身を副木と回復へ伝播させる。 */
+export function aroundAsync(
+  effects: Darkcore.AsyncHandlerMap = {},
+  wrapper?: AsyncAroundWrapper,
+): Darkcore.AsyncHandlerMap {
+  if (!wrapper) {
+    throw new Error('aroundAsync requires a wrapper');
+  }
+
+  const wrapped: Darkcore.AsyncHandlerMap = {};
+  const base = asyncRealHandlers(effects, wrapped);
+  for (const [tag, handler] of Object.entries(base)) {
+    wrapped[tag] = (payload) => wrapper(tag, payload, handler);
+  }
+  return wrapped;
 }
 
 /**
@@ -73,26 +116,38 @@ export function runSubtreeAsync(
   return Darkcore.foldAsync(build(node, focus), (x) => x as Result, handlers);
 }
 
-async function asyncRealTask(payload: [Task | AsyncTask, Focus]): Promise<Result> {
+async function asyncRealTask(
+  payload: [Task | AsyncTask, Focus],
+  handlers: Darkcore.AsyncHandlerMap,
+): Promise<Result> {
   const [task, focus] = payload;
+  const performer = new Perform(handlers);
   if (task instanceof AsyncTask) {
-    return task.callAsync(focus);
+    return task.callAsync(focus, task.effectful() ? performer : undefined);
   }
-  return task.call(focus);
+  return task.call(focus, task.effectful() ? performer : undefined);
 }
 
 /**
- * async Parallel — 全 branch を Promise.all で同時実行する。失敗合成 (short_circuit
- * /accumulate) と reducer merge は同期版の algebra をそのまま使う (merge は純粋計算)。
+ * async Parallel — 全 branch を同時開始し、Promise.allSettled で全てを待つ。
+ * rejection は型を問わず branch 順の最初を待機後に再送出し、rejection が無い
+ * ときだけ通常の失敗合成と reducer merge に同期版の algebra を再利用する。
  */
 export async function runParallelAsync(
   node: Parallel,
   focus: Focus,
   handlers: Darkcore.AsyncHandlerMap,
 ): Promise<Result> {
-  const branchResults = await Promise.all(
+  const settled = await Promise.allSettled(
     node.branches.map((branch) => runSubtreeAsync(branch, focus, handlers)),
   );
+  const firstRejection = settled.find(
+    (entry): entry is PromiseRejectedResult => entry.status === 'rejected',
+  );
+  if (firstRejection) {
+    throw firstRejection.reason;
+  }
+  const branchResults = settled.map((entry) => (entry as PromiseFulfilledResult<Result>).value);
   const failures = branchResults.filter((r): r is Err => r instanceof Err);
 
   if (failures.length > 0) {
@@ -129,21 +184,38 @@ export async function runRescueAsync(
   if (result instanceof Ok) {
     return result;
   }
-  return recoverAsync(node.handler, result as Err);
+  return dispatchRecoverAsync(node, result as Err, handlers);
+}
+
+/** Rescue の回復を現在の async handler map へ RECOVER effect として発行する。 */
+export function dispatchRecoverAsync(
+  node: Rescue,
+  errorResult: Err,
+  handlers: Darkcore.AsyncHandlerMap,
+): Promise<Result> {
+  return Darkcore.foldAsync(
+    Darkcore.op(RECOVER, [node, errorResult]),
+    (value) => value as Result,
+    handlers,
+  );
 }
 
 /**
- * 非同期回復 — 同期 recover の Promise 版。RescueBlock (同期ブロック) はそのまま、
- * AsyncTask handler は callAsync、通常 Task handler は call で回復する。handler が
- * Err を返したら回復失敗として元エラーを metadata に畳む (同期版と同一)。
+ * RECOVER の async real interpreter。RescueBlock は Perform とともに呼び、Task /
+ * AsyncTask handler は同じ async handler map の副木として走らせる。handler が Err を
+ * 返したら回復失敗として元エラーを metadata に畳む (同期版と同一)。
  */
-async function recoverAsync(handler: RescueHandler, errorResult: Err): Promise<Result> {
-  if (handler instanceof RescueBlock) {
-    return handler.call(errorResult.focus, errorResult);
+export async function realRecoverAsync(
+  node: Rescue | Catch,
+  errorResult: Err,
+  handlers: Darkcore.AsyncHandlerMap,
+): Promise<Result> {
+  const recovery = node.handler;
+  let handlerResult: Result;
+  if (recovery instanceof RescueBlock) {
+    handlerResult = recovery.call(errorResult.focus, errorResult, new Perform(handlers));
+  } else {
+    handlerResult = await runSubtreeAsync(recovery, errorResult.focus, handlers);
   }
-  const handlerResult =
-    handler instanceof AsyncTask
-      ? await handler.callAsync(errorResult.focus)
-      : handler.call(errorResult.focus);
   return handlerResult instanceof Err ? rescueFailed(errorResult, handlerResult) : handlerResult;
 }
