@@ -11,11 +11,13 @@ export const VERSION = '0.1.0';
 // --- core layer ---------------------------------------------------
 export { BerylxError, type BerylxErrorContext } from './error.js';
 export { Ok, Err, ResultOps, type Result, type Callable } from './result.js';
-export { Focus, KeyError } from './focus.js';
+export { Focus, KeyError, type PathKey, type PathAt, type KeysAt } from './focus.js';
 export { Root, type RootEvent } from './root.js';
 export { Flow } from './flow.js';
 export { State } from './state.js';
 export { Merge, type Reducer } from './merge.js';
+export { Perform } from './perform.js';
+export { ControlSignal } from './control-signal.js';
 
 // --- combinators --------------------------------------------------
 export { Task, type TaskBlock } from './task.js';
@@ -32,6 +34,7 @@ export {
   type CatchOptions,
 } from './rescue.js';
 export { Workflow } from './workflow.js';
+export { berylx, type Berylx } from './scoped.js';
 export { Graph } from './graph.js';
 
 // --- substrate ----------------------------------------------------
@@ -63,11 +66,11 @@ import type { Result } from './result.js';
 export const Lay = FocusClass;
 
 /** Ruby Berylx.run(workflow, focus) : Flow 経由で workflow を実行する。 */
-export function run(workflow: BerylxNode, focus: unknown): Result {
-  return FlowClass.of(focus).call(workflow);
+export function run<S = any>(workflow: BerylxNode<S>, focus: unknown): Result<S> {
+  return (FlowClass.of(focus) as FlowClass<S>).call(workflow);
 }
 
 /** Ruby Berylx.task(name) { ... } : Task の smart constructor。 */
-export function task(name: string, block: TaskBlock): TaskClass {
-  return TaskClass.of(name, block);
+export function task<S = any>(name: string, block: TaskBlock<S>): TaskClass<S> {
+  return TaskClass.of<S>(name, block);
 }

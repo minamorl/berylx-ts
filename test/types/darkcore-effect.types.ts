@@ -45,6 +45,22 @@ const ioProgram = Darkcore.IOEffects.exists('/tmp/example').bind((exists) =>
   Darkcore.pure(exists ? 'present' : 'missing'),
 );
 const ioValue = Darkcore.run(ioProgram, handlers);
+const existsValue = Darkcore.run(Darkcore.IOEffects.exists('/tmp/example'), handlers);
 
 type _IoBindReceivesBoolean = Expect<Equal<typeof ioProgram, Darkcore.Effect<string>>>;
 type _IoRunKeepsResult = Expect<Equal<typeof ioValue, string>>;
+type _ExistsRunKeepsBoolean = Expect<Equal<typeof existsValue, boolean>>;
+
+// @ts-expect-error decoder is required at the dynamic handler boundary
+Darkcore.op('lookup_user', { id: 7 });
+
+// @ts-expect-error bind receives the decoder's User result
+Darkcore.op('lookup_user', { id: 7 }, decodeUser).bind((user) => Darkcore.pure(user.missing));
+
+// @ts-expect-error run preserves the program's number result
+const wrongRunValue: string = runValue;
+
+// @ts-expect-error IO exists has a concrete boolean response
+const wrongExistsValue: string = existsValue;
+
+export { program, runValue, foldedValue, asyncValue, ioProgram, ioValue, existsValue };

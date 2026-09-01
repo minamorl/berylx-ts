@@ -50,10 +50,11 @@ export class Effect<A = unknown> {
   private readonly current: EffectStep<A>;
 
   private constructor(current: EffectStep<A>) {
-    this.current = current;
+    this.current = Object.freeze(current);
     this.tag = current.closed ? PURE : current.tag;
     this.payload = current.closed ? current.value : current.payload;
     this.k = current.closed ? null : current.resume;
+    Object.freeze(this);
   }
 
   /** 閉じた作用 (継続なし) = 従来の pure / return。 */

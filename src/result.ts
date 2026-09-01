@@ -17,36 +17,40 @@ export interface Callable {
   call(focus: unknown): Result;
 }
 
-export type Result = Ok | Err;
+/**
+ * 結果封筒。S は workflow の状態のルート型で、Ok/Err のどちらでも focus は
+ * 同じ S を指す。失敗しても部分状態を捨てないので、Err 側も焦点を型付きで運ぶ。
+ */
+export type Result<S = any> = Ok<S> | Err<S>;
 
 /** 成功封筒。焦点 (focus) を運ぶ。 */
-export class Ok {
-  readonly focus: Focus;
+export class Ok<S = any> {
+  readonly focus: Focus<S, []>;
 
-  constructor(focus: Focus) {
+  constructor(focus: Focus<S, []>) {
     this.focus = focus;
   }
 
   /** Ruby Ok#| : 次のノードへ bind (focus を渡して実行)。 */
-  pipe(node: Callable): Result {
+  pipe(node: Callable): Result<S> {
     return ResultOps.bind(this, (current) => node.call(current));
   }
 
-  isOk(): this is Ok {
+  isOk(): this is Ok<S> {
     return true;
   }
 
-  isErr(): this is Err {
+  isErr(): this is Err<S> {
     return false;
   }
 }
 
 /** 失敗封筒。部分状態 (focus) と構造化エラー (error) を運ぶ。 */
-export class Err {
-  readonly focus: Focus;
+export class Err<S = any> {
+  readonly focus: Focus<S, []>;
   readonly error: BerylxError;
 
-  constructor(focus: Focus, error: BerylxError) {
+  constructor(focus: Focus<S, []>, error: BerylxError) {
     this.focus = focus;
     this.error = error;
   }
@@ -100,16 +104,16 @@ export class Err {
 
 /** Result 圏の演算 (Ruby module Berylx::Result 相当)。 */
 export const ResultOps = {
-  ok(value: unknown): Ok {
+  ok<S = any>(value: unknown): Ok<S> {
     return new Ok(ResultOps.coerceFocus(value));
   },
 
-  err(
+  err<S = any>(
     value: unknown,
     codeOrError: string | BerylxError,
     message?: string,
     context: BerylxErrorContext = {},
-  ): Err {
+  ): Err<S> {
     const error =
       codeOrError instanceof BerylxError
         ? codeOrError.withContext(context)
@@ -118,7 +122,7 @@ export const ResultOps = {
   },
 
   /** 値が既に Ok/Err ならそのまま、そうでなければ Ok に包む。 */
-  normalize(value: unknown): Result {
+  normalize<S = any>(value: unknown): Result<S> {
     if (value instanceof Ok || value instanceof Err) {
       return value;
     }
@@ -126,21 +130,21 @@ export const ResultOps = {
   },
 
   /** 値を Focus に強制変換する (既に Focus ならそのまま)。 */
-  coerceFocus(value: unknown): Focus {
+  coerceFocus<S = any>(value: unknown): Focus<S, []> {
     if (value instanceof Focus) {
-      return value;
+      return value as Focus<S, []>;
     }
-    return Focus.of(value);
+    return Focus.of(value) as Focus<S, []>;
   },
 
-  map(result: Result, block: (focus: Focus) => unknown): Result {
+  map<S = any>(result: Result<S>, block: (focus: Focus<S, []>) => unknown): Result<S> {
     if (result instanceof Ok) {
       return ResultOps.normalize(block(result.focus));
     }
     return result;
   },
 
-  bind(result: Result, block: (focus: Focus) => unknown): Result {
+  bind<S = any>(result: Result<S>, block: (focus: Focus<S, []>) => unknown): Result<S> {
     if (result instanceof Ok) {
       return ResultOps.normalize(block(result.focus));
     }

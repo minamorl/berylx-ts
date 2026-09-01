@@ -15,27 +15,39 @@ import type { BerylxNode, NamedNode } from './node.js';
 import { Sequence } from './sequence.js';
 import { Parallel } from './parallel.js';
 import { EffectTree } from './effect-tree/index.js';
+import { Perform } from './perform.js';
+import { ControlSignal } from './control-signal.js';
 
-/** 回復ブロック handler の本体。error と focus を受け取り Focus/Result を返す。 */
-export type RescueHandlerBlock = (error: unknown, focus: Focus) => Focus | Result | unknown;
+/** 回復ブロック handler。本体の第三引数には現在の handler map の Perform が渡る。 */
+export type RescueHandlerBlock<S = any> = (
+  error: unknown,
+  focus: Focus<S, []>,
+  performer: Perform,
+) => Focus<S, any> | Result<S> | unknown;
 
 /** ブロックで回復する handler (Ruby RescueBlock)。 */
-export class RescueBlock implements NamedNode {
+export class RescueBlock<S = any> implements NamedNode {
   readonly name: string;
-  private readonly block: RescueHandlerBlock;
+  private readonly block: RescueHandlerBlock<S>;
 
-  constructor(name: string, block: RescueHandlerBlock) {
+  constructor(name: string, block: RescueHandlerBlock<S>) {
     this.name = String(name);
     this.block = block;
   }
 
   /** error_result から回復を試みる。error は cause 優先 (無ければ構造化エラー)。 */
-  call(focus: Focus, errorResult: Err): Result {
+  call(focus: Focus<S, []>, errorResult: Err<S>, performer?: Perform): Result<S> {
     try {
       const errArg = errorResult.error.cause ?? errorResult.error;
-      const result = ResultOps.normalize(this.block(errArg, focus));
+      const output = this.effectful()
+        ? this.block(errArg, focus, performer as Perform)
+        : (this.block as (error: unknown, focus: Focus) => unknown)(errArg, focus);
+      const result = ResultOps.normalize(output);
       return result instanceof Err ? this.withRescueContext(result) : result;
     } catch (e) {
+      if (e instanceof ControlSignal) {
+        throw e;
+      }
       const err = e as Error;
       return ResultOps.err(focus, (err && err.name) || 'Error', (err && err.message) || String(e), {
         cause: e,
@@ -49,14 +61,19 @@ export class RescueBlock implements NamedNode {
     return [this];
   }
 
-  private withRescueContext(result: Err): Err {
+  /** 3 個以上の仮引数を宣言した recovery block だけが作用を要求する。 */
+  effectful(): boolean {
+    return this.block.length >= 3;
+  }
+
+  private withRescueContext(result: Err<S>): Err<S> {
     const error = result.error.failedNode ? result.error : result.error.prependTrace(this.name);
     return new Err(result.focus, error);
   }
 }
 
 /** 回復 handler は RescueBlock か call を持つノード (Task 等)。 */
-export type RescueHandler = RescueBlock | BerylxNode;
+export type RescueHandler<S = any> = RescueBlock<S> | BerylxNode<S>;
 
 /** Catch のオプション (Ruby options)。 */
 export interface CatchOptions {
@@ -64,19 +81,19 @@ export interface CatchOptions {
 }
 
 /** Sequence 内の短絡境界 (Ruby Catch)。 */
-export class Catch implements BerylxNode {
+export class Catch<S = any> implements BerylxNode<S> {
   readonly name: string;
-  readonly handler: RescueHandler;
+  readonly handler: RescueHandler<S>;
   private readonly catchesTerminal: boolean;
 
   constructor(
     name: string = 'catch',
-    handler: RescueHandler | null = null,
+    handler: RescueHandler<S> | null = null,
     options: CatchOptions = {},
-    block?: RescueHandlerBlock,
+    block?: RescueHandlerBlock<S>,
   ) {
     this.name = String(name);
-    this.handler = block ? new RescueBlock(this.name, block) : (handler as RescueHandler);
+    this.handler = block ? new RescueBlock<S>(this.name, block) : (handler as RescueHandler<S>);
     this.catchesTerminal = options.fatal ?? false;
     if (!this.handler) {
       throw new Error('Catch requires a task or block');
@@ -84,34 +101,38 @@ export class Catch implements BerylxNode {
   }
 
   /** Ruby Catch[name, **options] { block } に対応。 */
-  static of(
+  static of<S = any>(
     name: string = 'catch',
-    handler: RescueHandler | null = null,
+    handler: RescueHandler<S> | null = null,
     options: CatchOptions = {},
-    block?: RescueHandlerBlock,
-  ): Catch {
-    return new Catch(name, handler, options, block);
+    block?: RescueHandlerBlock<S>,
+  ): Catch<S> {
+    return new Catch<S>(name, handler, options, block);
   }
 
   /** この Catch が当該エラーを回復対象にするか。 */
-  catches(errorResult: Err): boolean {
+  catches(errorResult: Err<S>): boolean {
     return !this.terminal(errorResult.error) || this.catchesTerminal;
   }
 
-  call(focus: unknown): Result {
+  call(focus: unknown): Result<S> {
     return EffectTree.run(this, focus);
   }
 
-  then(other: BerylxNode): BerylxNode {
-    return new Sequence([this, other]);
+  then(other: BerylxNode<S>): BerylxNode<S> {
+    return new Sequence<S>([this, other]);
   }
 
-  par(other: BerylxNode): BerylxNode {
-    return new Parallel([this, other]);
+  par(other: BerylxNode<S>): BerylxNode<S> {
+    return new Parallel<S>([this, other]);
   }
 
-  rescueWith(handler: BerylxNode | null, name?: string | null, block?: RescueHandlerBlock): BerylxNode {
-    return Sequence.buildRescue(this, handler, name, block);
+  rescueWith(
+    handler: BerylxNode<S> | null,
+    name?: string | null,
+    block?: RescueHandlerBlock<S>,
+  ): BerylxNode<S> {
+    return Sequence.buildRescue<S>(this, handler, name, block);
   }
 
   nodes(): NamedNode[] {
@@ -125,29 +146,33 @@ export class Catch implements BerylxNode {
 }
 
 /** body の Err を回復 handler で差し替える合成子 (Ruby Rescue)。 */
-export class Rescue implements BerylxNode {
-  readonly body: BerylxNode;
-  readonly handler: RescueHandler;
+export class Rescue<S = any> implements BerylxNode<S> {
+  readonly body: BerylxNode<S>;
+  readonly handler: RescueHandler<S>;
 
-  constructor(body: BerylxNode, handler: RescueHandler) {
+  constructor(body: BerylxNode<S>, handler: RescueHandler<S>) {
     this.body = body;
     this.handler = handler;
   }
 
-  call(focus: unknown): Result {
+  call(focus: unknown): Result<S> {
     return EffectTree.run(this, focus);
   }
 
-  then(other: BerylxNode): BerylxNode {
-    return new Sequence([this, other]);
+  then(other: BerylxNode<S>): BerylxNode<S> {
+    return new Sequence<S>([this, other]);
   }
 
-  par(other: BerylxNode): BerylxNode {
-    return new Parallel([this, other]);
+  par(other: BerylxNode<S>): BerylxNode<S> {
+    return new Parallel<S>([this, other]);
   }
 
-  rescueWith(handler: BerylxNode | null, name?: string | null, block?: RescueHandlerBlock): BerylxNode {
-    return Sequence.buildRescue(this, handler, name, block);
+  rescueWith(
+    handler: BerylxNode<S> | null,
+    name?: string | null,
+    block?: RescueHandlerBlock<S>,
+  ): BerylxNode<S> {
+    return Sequence.buildRescue<S>(this, handler, name, block);
   }
 
   nodes(): NamedNode[] {

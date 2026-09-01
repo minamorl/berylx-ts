@@ -15,22 +15,22 @@ import { Parallel } from './parallel.js';
 import { EffectTree } from './effect-tree/index.js';
 
 /** 述語 (Ruby Predicate)。else_branch なら常に真。 */
-export interface Predicate {
+export interface Predicate<S = any> {
   readonly name: string;
-  readonly block: ((focus: Focus) => unknown) | null;
+  readonly block: ((focus: Focus<S, []>) => unknown) | null;
   readonly elseBranch: boolean;
 }
 
 /** 分岐の 1 本 (Ruby BranchArm)。 */
-export interface BranchArm {
-  readonly predicate: Predicate;
-  readonly body: BerylxNode;
+export interface BranchArm<S = any> {
+  readonly predicate: Predicate<S>;
+  readonly body: BerylxNode<S>;
 }
 
-export class When {
-  private readonly predicate: Predicate;
+export class When<S = any> {
+  private readonly predicate: Predicate<S>;
 
-  constructor(name: string, block: ((focus: Focus) => unknown) | null, elseBranch: boolean) {
+  constructor(name: string, block: ((focus: Focus<S, []>) => unknown) | null, elseBranch: boolean) {
     if (!block && !elseBranch) {
       throw new Error('When requires a predicate block');
     }
@@ -38,44 +38,48 @@ export class When {
   }
 
   /** Ruby When[name] { block } に対応。 */
-  static of(name: string, block: (focus: Focus) => unknown): When {
-    return new When(name, block, false);
+  static of<S = any>(name: string, block: (focus: Focus<S, []>) => unknown): When<S> {
+    return new When<S>(name, block, false);
   }
 
   /** Ruby When#>> : arm を 1 本持つ Branch を作る。 */
-  then(other: BerylxNode): Branch {
-    return new Branch([{ predicate: this.predicate, body: other }]);
+  then(other: BerylxNode<S>): Branch<S> {
+    return new Branch<S>([{ predicate: this.predicate, body: other }]);
   }
 }
 
 /** Ruby Else 定数相当。常に真の arm を作る。 */
 export const Else = new When('else', null, true);
 
-export class Branch implements BerylxNode {
-  readonly arms: readonly BranchArm[];
+export class Branch<S = any> implements BerylxNode<S> {
+  readonly arms: readonly BranchArm<S>[];
 
-  constructor(arms: BranchArm[]) {
+  constructor(arms: BranchArm<S>[]) {
     this.arms = Object.freeze([...arms]);
   }
 
   /** Ruby Branch#| : arm を連結する。 */
-  or(other: Branch): Branch {
-    return new Branch([...this.arms, ...other.arms]);
+  or(other: Branch<S>): Branch<S> {
+    return new Branch<S>([...this.arms, ...other.arms]);
   }
 
-  then(other: BerylxNode): BerylxNode {
-    return new Sequence([this, other]);
+  then(other: BerylxNode<S>): BerylxNode<S> {
+    return new Sequence<S>([this, other]);
   }
 
-  par(other: BerylxNode): BerylxNode {
-    return new Parallel([this, other]);
+  par(other: BerylxNode<S>): BerylxNode<S> {
+    return new Parallel<S>([this, other]);
   }
 
-  rescueWith(handler: BerylxNode | null, name?: string | null, block?: RescueHandlerBlock): BerylxNode {
-    return Sequence.buildRescue(this, handler, name, block);
+  rescueWith(
+    handler: BerylxNode<S> | null,
+    name?: string | null,
+    block?: RescueHandlerBlock<S>,
+  ): BerylxNode<S> {
+    return Sequence.buildRescue<S>(this, handler, name, block);
   }
 
-  call(focus: unknown): Result {
+  call(focus: unknown): Result<S> {
     return EffectTree.run(this, focus);
   }
 

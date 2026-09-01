@@ -1,17 +1,17 @@
 {
   "name": "@minamorl/berylx",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Graphable TypeScript workflows over focused, recoverable state.",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist",
-    "src",
-    "README.md",
+    "LICENSE",
     "MIGRATION.md",
-    "LICENSE"
+    "README.md",
+    "dist",
+    "src"
   ],
   "exports": {
     ".": {
@@ -38,11 +38,13 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
-    "test:types": "tsc -p tsconfig.type-tests.json",
-    "test": "vitest run",
+    "test:types": "node scripts/check-types.mjs",
+    "test": "vitest run && node scripts/check-types.mjs",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "check:types": "node scripts/check-types.mjs"
   },
   "keywords": [
     "workflow",

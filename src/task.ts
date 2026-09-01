@@ -13,15 +13,20 @@ import { Sequence } from './sequence.js';
 import { Parallel } from './parallel.js';
 import { Graph } from './graph.js';
 import type { RescueHandlerBlock } from './rescue.js';
+import { Perform } from './perform.js';
+import { ControlSignal } from './control-signal.js';
 
-/** Task の本体。Focus を受け取り Focus か Result を返す。 */
-export type TaskBlock = (focus: Focus) => Focus | Result | unknown;
+/** Task の本体。1 引数の関数も代入でき、2 引数を宣言すると Perform を受け取る。 */
+export type TaskBlock<S = any> = (
+  focus: Focus<S, []>,
+  performer: Perform,
+) => Focus<S, any> | Result<S> | unknown;
 
-export class Task implements BerylxNode, NamedNode {
+export class Task<S = any> implements BerylxNode<S>, NamedNode {
   readonly name: string;
-  private readonly block: TaskBlock;
+  private readonly block: TaskBlock<S>;
 
-  constructor(name: string, block: TaskBlock) {
+  constructor(name: string, block: TaskBlock<S>) {
     if (typeof block !== 'function') {
       throw new Error('Task requires a block');
     }
@@ -30,16 +35,19 @@ export class Task implements BerylxNode, NamedNode {
   }
 
   /** Ruby Task[name] { ... } / Task.build に対応。 */
-  static of(name: string, block: TaskBlock): Task {
+  static of<S = any>(name: string, block: TaskBlock<S>): Task<S> {
     return new Task(name, block);
   }
 
-  call(focus: unknown): Result {
-    const root = ResultOps.coerceFocus(focus);
+  call(focus: unknown, performer?: Perform): Result<S> {
+    const root = ResultOps.coerceFocus<S>(focus);
     try {
-      const result = ResultOps.normalize(this.block(root));
+      const result = ResultOps.normalize(this.invoke(root, performer));
       return result instanceof Err ? this.withTaskContext(result) : result;
     } catch (e) {
+      if (e instanceof ControlSignal) {
+        throw e;
+      }
       const err = e as Error;
       return ResultOps.err(root, (err && err.name) || 'Error', (err && err.message) || String(e), {
         cause: e,
@@ -49,20 +57,20 @@ export class Task implements BerylxNode, NamedNode {
     }
   }
 
-  then(other: BerylxNode): BerylxNode {
-    return new Sequence([this, other]);
+  then(other: BerylxNode<S>): BerylxNode<S> {
+    return new Sequence<S>([this, other]);
   }
 
-  par(other: BerylxNode): BerylxNode {
-    return new Parallel([this, other]);
+  par(other: BerylxNode<S>): BerylxNode<S> {
+    return new Parallel<S>([this, other]);
   }
 
   /** Ruby Task#| は self >> other。 */
-  pipe(other: BerylxNode): BerylxNode {
+  pipe(other: BerylxNode<S>): BerylxNode<S> {
     return this.then(other);
   }
 
-  rescueWith(handler: BerylxNode | null, name?: string | null, block?: RescueHandlerBlock): BerylxNode {
+  rescueWith(handler: BerylxNode<S> | null, name?: string | null, block?: RescueHandlerBlock): BerylxNode<S> {
     return Sequence.buildRescue(this, handler, name, block);
   }
 
@@ -74,8 +82,25 @@ export class Task implements BerylxNode, NamedNode {
     return [this];
   }
 
-  private withTaskContext(result: Err): Err {
+  /** 2 個以上の仮引数を宣言した Task だけが作用を要求する。 */
+  effectful(): boolean {
+    return this.block.length >= 2;
+  }
+
+  private withTaskContext(result: Err<S>): Err<S> {
     const error = result.error.failedNode ? result.error : result.error.prependTrace(this.name);
     return new Err(result.focus, error);
+  }
+
+  private invoke(root: Focus, performer?: Perform): unknown {
+    if (!this.effectful()) {
+      return (this.block as (focus: Focus) => unknown)(root);
+    }
+    if (!performer) {
+      throw new Error(
+        `task ${this.name} performs effects; run it through a handler map (EffectTree.run / Flow.call)`,
+      );
+    }
+    return this.block(root, performer);
   }
 }

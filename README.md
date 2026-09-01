@@ -50,6 +50,44 @@ Ruby 版の演算子 (`>>` `&` `|`) は TS ではメソッドへ写している:
 | `When[:x] { }`  | `When.of('x', () => …)`| 分岐の述語               |
 | `arm \| Else`   | `arm.or(Else.then(…))` | arm の連結               |
 
+## 型付きの状態
+
+`Focus` は状態のルート型 `S` と、いま見ている path `P` を型に載せる。既定は
+`S = any` なので、型を付けない書き方はこれまでどおり通る。
+
+```ts
+import { berylx } from '@minamorl/berylx';
+
+interface Order {
+  user: { name: string; age: number };
+  total: number;
+  status: 'paid' | 'trial' | null;
+}
+
+const b = berylx<Order>();   // 境界ごとに 1 回だけ状態型を宣言する
+
+const strip = b.task('strip', (f) => f.at('user').at('name').update((s) => s.trim()));
+//                                 ^ f: Focus<Order>、s: string と推論される
+
+b.task('typo', (f) => f.at('user').at('nmae'));
+//                                  ~~~~~~
+//  Argument of type '"nmae"' is not assignable to parameter of type '"name" | "age"'
+```
+
+`berylx<S>()` は薄いラッパで、`Task.of<S>(...)` / `Flow.of(...)` を直接書くのと
+実行時は等価。型引数を毎回書かずに済ませるためだけにある。
+
+### なぜ `Task<A, B>` にしないのか
+
+状態遷移を `Task<A, B>` として型付けると、`then` の合成で型の幅寄せが要り、
+`set` が状態の型を広げるための再帰的な object 再構築 (`SetAt<S, P, V>`) を
+呼び込む。エラーメッセージが読めなくなり、ライブラリ全体が型の体操に侵食される。
+
+berylx は境界ごとに Root が 1 つなので、状態型 `S` は workflow ごとに固定できる。
+合成子を `S` について単相にすると `set` が型を変えないので、型レベルの計算は
+path の読み出し (`PathAt<S, P>`) 一本で済む。動的なキーを掘りたい場合は
+`Focus<any>` を使えば従来どおり。
+
 ## 並列の merge algebra
 
 `a.par(b)` は全 branch を**同じ base snapshot から**走らせ、返ってきた Focus を
