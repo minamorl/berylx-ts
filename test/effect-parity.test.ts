@@ -413,13 +413,20 @@ describe('RECOVER dispatch and around aspects', () => {
 describe('Darkcore Effect record immutability', () => {
   it('prevents shallow field reassignment while leaving payload contents mutable', () => {
     const payload = { count: 1 };
-    const effect = Berylx.Darkcore.op('custom', payload);
+    const effect = Berylx.Darkcore.op('custom', payload, (value) => {
+      if (value !== null) {
+        throw new TypeError('custom handler must return null');
+      }
+      return value;
+    });
     const originalContinuation = effect.k;
 
     expect(Reflect.set(effect, 'tag', 'changed')).toBe(false);
     expect(Reflect.set(effect, 'payload', { count: 99 })).toBe(false);
     expect(Reflect.set(effect, 'k', null)).toBe(false);
+    expect(Reflect.set(effect.step(), 'tag', 'changed')).toBe(false);
     expect(effect.tag).toBe('custom');
+    expect(effect.step()).toMatchObject({ closed: false, tag: 'custom', payload });
     expect(effect.payload).toBe(payload);
     expect(effect.k).toBe(originalContinuation);
 

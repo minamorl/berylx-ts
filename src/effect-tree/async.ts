@@ -23,6 +23,15 @@ import { Rescue, RescueBlock, Catch } from '../rescue.js';
 import type { BerylxNode } from '../node.js';
 import { build, TASK, PARALLEL, BRANCH, RESCUE, RECOVER } from './index.js';
 import {
+  decodeResult,
+  decodeTaskPayload,
+  decodeParallelPayload,
+  decodeBranchPayload,
+  decodeRescuePayload,
+  decodeRecoverPayload,
+  type TaskPayload,
+} from './payload.js';
+import {
   parallelHandleFailures,
   parallelMerge,
   branchMatches,
@@ -57,21 +66,21 @@ export function asyncRealHandlers(
   const handlers: Darkcore.AsyncHandlerMap = {};
   const current = () => subtree ?? handlers;
   handlers[TASK] = (payload) =>
-    asyncRealTask(payload as [Task | AsyncTask, Focus], current());
+    asyncRealTask(decodeTaskPayload(payload), current());
   handlers[PARALLEL] = (payload) => {
-    const [node, focus] = payload as [Parallel, Focus];
+    const [node, focus] = decodeParallelPayload(payload);
     return runParallelAsync(node, focus, current());
   };
   handlers[BRANCH] = (payload) => {
-    const [node, focus] = payload as [Branch, Focus];
+    const [node, focus] = decodeBranchPayload(payload);
     return runBranchAsync(node, focus, current());
   };
   handlers[RESCUE] = (payload) => {
-    const [node, focus] = payload as [Rescue, Focus];
+    const [node, focus] = decodeRescuePayload(payload);
     return runRescueAsync(node, focus, current());
   };
   handlers[RECOVER] = (payload) => {
-    const [node, errorResult] = payload as [Rescue | Catch, Err];
+    const [node, errorResult] = decodeRecoverPayload(payload);
     return realRecoverAsync(node, errorResult, current());
   };
   Object.assign(handlers, effects);
@@ -104,7 +113,7 @@ export function runAsync(
   focus: unknown,
   handlers: Darkcore.AsyncHandlerMap = asyncRealHandlers(),
 ): Promise<Result> {
-  return Darkcore.foldAsync(build(node, ResultOps.coerceFocus(focus)), (x) => x as Result, handlers);
+  return Darkcore.foldAsync(build(node, ResultOps.coerceFocus(focus)), (x) => x, handlers);
 }
 
 /** 非同期副木実行ヘルパ (合成子 handler が枝の実行に使う)。 */
@@ -113,11 +122,11 @@ export function runSubtreeAsync(
   focus: Focus,
   handlers: Darkcore.AsyncHandlerMap,
 ): Promise<Result> {
-  return Darkcore.foldAsync(build(node, focus), (x) => x as Result, handlers);
+  return Darkcore.foldAsync(build(node, focus), (x) => x, handlers);
 }
 
 async function asyncRealTask(
-  payload: [Task | AsyncTask, Focus],
+  payload: TaskPayload,
   handlers: Darkcore.AsyncHandlerMap,
 ): Promise<Result> {
   const [task, focus] = payload;
@@ -141,13 +150,12 @@ export async function runParallelAsync(
   const settled = await Promise.allSettled(
     node.branches.map((branch) => runSubtreeAsync(branch, focus, handlers)),
   );
-  const firstRejection = settled.find(
-    (entry): entry is PromiseRejectedResult => entry.status === 'rejected',
-  );
-  if (firstRejection) {
-    throw firstRejection.reason;
-  }
-  const branchResults = settled.map((entry) => (entry as PromiseFulfilledResult<Result>).value);
+  const branchResults = settled.map((entry) => {
+    if (entry.status === 'rejected') {
+      throw entry.reason;
+    }
+    return entry.value;
+  });
   const failures = branchResults.filter((r): r is Err => r instanceof Err);
 
   if (failures.length > 0) {
@@ -184,7 +192,7 @@ export async function runRescueAsync(
   if (result instanceof Ok) {
     return result;
   }
-  return dispatchRecoverAsync(node, result as Err, handlers);
+  return dispatchRecoverAsync(node, result, handlers);
 }
 
 /** Rescue の回復を現在の async handler map へ RECOVER effect として発行する。 */
@@ -194,8 +202,8 @@ export function dispatchRecoverAsync(
   handlers: Darkcore.AsyncHandlerMap,
 ): Promise<Result> {
   return Darkcore.foldAsync(
-    Darkcore.op(RECOVER, [node, errorResult]),
-    (value) => value as Result,
+    Darkcore.op(RECOVER, [node, errorResult], decodeResult),
+    (value) => value,
     handlers,
   );
 }

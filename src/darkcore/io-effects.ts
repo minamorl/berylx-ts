@@ -18,24 +18,97 @@ import type { Effect, HandlerMap } from './effect.js';
 /** IO 作用の smart constructor 群。呼んでも副作用は起きずタグ付き作用を返す。 */
 export const IOEffects = {
   // -- コンソール --
-  say: (msg: unknown): Effect<unknown> => op('say', msg),
-  warn: (msg: unknown): Effect<unknown> => op('warn', msg),
-  ask: (prompt: unknown = null): Effect<unknown> => op('ask', prompt),
+  say: (msg: unknown): Effect<null> => op('say', msg, decodeNull),
+  warn: (msg: unknown): Effect<null> => op('warn', msg, decodeNull),
+  ask: (prompt: unknown = null): Effect<string | undefined> =>
+    op('ask', prompt, decodeOptionalString),
 
   // -- ファイル --
-  read: (path: string): Effect<unknown> => op('read', path),
-  write: (path: string, data: string): Effect<unknown> => op('write', [path, data]),
-  append: (path: string, data: string): Effect<unknown> => op('append', [path, data]),
-  delete: (path: string): Effect<unknown> => op('delete', path),
-  exists: (path: string): Effect<unknown> => op('exists', path),
-  listDir: (path: string): Effect<unknown> => op('list_dir', path),
+  read: (path: string): Effect<string> => op('read', path, decodeString),
+  write: (path: string, data: string): Effect<null> =>
+    op('write', stringPair(path, data), decodeNull),
+  append: (path: string, data: string): Effect<null> =>
+    op('append', stringPair(path, data), decodeNull),
+  delete: (path: string): Effect<null> => op('delete', path, decodeNull),
+  exists: (path: string): Effect<boolean> => op('exists', path, decodeBoolean),
+  listDir: (path: string): Effect<string[]> => op('list_dir', path, decodeStringArray),
 
   // -- 環境 / システム --
-  getenv: (key: string): Effect<unknown> => op('getenv', key),
-  now: (): Effect<unknown> => op('now', null),
-  rand: (n: number): Effect<unknown> => op('rand', n),
-  shell: (cmd: string): Effect<unknown> => op('shell', cmd),
+  getenv: (key: string): Effect<string | null | undefined> =>
+    op('getenv', key, decodeNullableString),
+  now: (): Effect<unknown> => op('now', null, decodeUnknown),
+  rand: (n: number): Effect<number> => op('rand', n, decodeNumber),
+  shell: (cmd: string): Effect<string> => op('shell', cmd, decodeString),
 };
+
+function stringPair(first: string, second: string): [string, string] {
+  return [first, second];
+}
+
+function decodeNull(value: unknown): null {
+  if (value !== null) {
+    throw new TypeError('effect handler must return null');
+  }
+  return value;
+}
+
+function decodeString(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new TypeError('effect handler must return a string');
+  }
+  return value;
+}
+
+function decodeOptionalString(value: unknown): string | undefined {
+  if (value !== undefined && typeof value !== 'string') {
+    throw new TypeError('effect handler must return a string or undefined');
+  }
+  return value;
+}
+
+function decodeNullableString(value: unknown): string | null | undefined {
+  if (value !== null && value !== undefined && typeof value !== 'string') {
+    throw new TypeError('effect handler must return a string, null, or undefined');
+  }
+  return value;
+}
+
+function decodeBoolean(value: unknown): boolean {
+  if (typeof value !== 'boolean') {
+    throw new TypeError('effect handler must return a boolean');
+  }
+  return value;
+}
+
+function decodeNumber(value: unknown): number {
+  if (typeof value !== 'number') {
+    throw new TypeError('effect handler must return a number');
+  }
+  return value;
+}
+
+function decodeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.every((entry: unknown) => typeof entry === 'string')) {
+    throw new TypeError('effect handler must return an array of strings');
+  }
+  return value;
+}
+
+function decodeUnknown(value: unknown): unknown {
+  return value;
+}
+
+function decodeStringPair(value: unknown): [string, string] {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 2 ||
+    typeof value[0] !== 'string' ||
+    typeof value[1] !== 'string'
+  ) {
+    throw new TypeError('effect payload must be a [string, string] tuple');
+  }
+  return [value[0], value[1]];
+}
 
 /** stdin から 1 行を同期読み取る (real の ask 用。EOF/非ブロッキングは空文字)。 */
 function readLineSync(): string {
@@ -83,12 +156,12 @@ export function realHandlers(): HandlerMap {
     },
     read: (p) => fs.readFileSync(String(p), 'utf8'),
     write: (pd) => {
-      const [p, d] = pd as [string, string];
+      const [p, d] = decodeStringPair(pd);
       fs.writeFileSync(p, d);
       return null;
     },
     append: (pd) => {
-      const [p, d] = pd as [string, string];
+      const [p, d] = decodeStringPair(pd);
       fs.appendFileSync(p, d);
       return null;
     },
@@ -177,13 +250,13 @@ export class VirtualWorld {
         return this.fs[key];
       },
       write: (pd) => {
-        const [p, d] = pd as [string, string];
+        const [p, d] = decodeStringPair(pd);
         this.fs[p] = d;
         this.log.push(['write', p]);
         return null;
       },
       append: (pd) => {
-        const [p, d] = pd as [string, string];
+        const [p, d] = decodeStringPair(pd);
         this.fs[p] = (this.fs[p] ?? '') + d;
         this.log.push(['append', p]);
         return null;

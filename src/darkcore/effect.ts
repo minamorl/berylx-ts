@@ -31,45 +31,82 @@ export const PURE = 'pure';
  *   k       : 継続。作用の結果を受け取り「次の Effect」を返す関数。
  *             閉じた作用 (:pure) では null。
  */
+export type ResponseDecoder<A> = (value: unknown) => A;
+
+/** Effect の現在位置。handler 応答だけを動的境界として unknown で受ける。 */
+export type EffectStep<A> =
+  | { readonly closed: true; readonly value: A }
+  | {
+      readonly closed: false;
+      readonly tag: string;
+      readonly payload: unknown;
+      readonly resume: (response: unknown) => Effect<A>;
+    };
+
 export class Effect<A = unknown> {
   readonly tag: string;
   readonly payload: unknown;
   readonly k: ((x: unknown) => Effect<A>) | null;
+  private readonly current: EffectStep<A>;
 
-  constructor(tag: string, payload: unknown, k: ((x: unknown) => Effect<A>) | null) {
-    this.tag = tag;
-    this.payload = payload;
-    this.k = k;
+  private constructor(current: EffectStep<A>) {
+    this.current = Object.freeze(current);
+    this.tag = current.closed ? PURE : current.tag;
+    this.payload = current.closed ? current.value : current.payload;
+    this.k = current.closed ? null : current.resume;
     Object.freeze(this);
   }
 
   /** 閉じた作用 (継続なし) = 従来の pure / return。 */
   static pure<A>(x: A): Effect<A> {
-    return new Effect<A>(PURE, x, null);
+    return new Effect<A>({ closed: true, value: x });
+  }
+
+  /** decoder で handler 応答を narrow する、開いた作用の smart constructor。 */
+  static op<P, A>(tag: string, payload: P, decode: ResponseDecoder<A>): Effect<A> {
+    if (tag === PURE) {
+      throw new Error(':pure は予約タグ (閉じた作用)');
+    }
+    return Effect.suspend(tag, payload, (response) => Effect.pure(decode(response)));
   }
 
   /** 継続を持たない :pure ノードか? (= 実行の終端) */
   closed(): boolean {
-    return this.tag === PURE && this.k === null;
+    return this.current.closed;
+  }
+
+  /** interpreter 用の型付き 1-step view。 */
+  step(): EffectStep<A> {
+    return this.current;
   }
 
   /**
    * bind — 圏固有の演算 (category algebra) をひとつも埋め込まない。
    * ただの構造の接ぎ木 (free = 意味を持たない)。
    */
-  bind<B>(f: (x: unknown) => Effect<B>): Effect<B> {
-    if (this.closed()) {
+  bind<B>(f: (x: A) => Effect<B>): Effect<B> {
+    const current = this.current;
+    if (current.closed) {
       // 閉じた点なら、そのまま次の作用へ継続を接ぐだけ。
-      return f(this.payload);
+      return f(current.value);
     }
     // 実行せず木を伸ばす。継続の内側に f を差し込むだけ。
-    const prevK = this.k!;
-    return new Effect<B>(this.tag, this.payload, (x: unknown) => prevK(x).bind(f));
+    return Effect.suspend<B>(current.tag, current.payload, (response) =>
+      current.resume(response).bind(f),
+    );
   }
 
   /** 逐次実行 (前の結果を捨てて次の作用へ)。bind の特例。 */
   seq<B>(next: Effect<B>): Effect<B> {
     return this.bind(() => next);
+  }
+
+  private static suspend<A>(
+    tag: string,
+    payload: unknown,
+    resume: (response: unknown) => Effect<A>,
+  ): Effect<A> {
+    return new Effect<A>({ closed: false, tag, payload, resume });
   }
 }
 
@@ -80,14 +117,11 @@ export function pure<A>(x: A): Effect<A> {
 
 /**
  * op / perform — 作用の smart constructor。
- * tag を投げて結果 x を受け取る (継続は「値をそのまま返す」で初期化)。
+ * tag を投げて handler 応答を受け取り、decode 後の値を継続へ渡す。
  * ここでは一切副作用が起きない。返るのは検査可能な純粋データ。
  */
-export function op(tag: string, payload: unknown = null): Effect<unknown> {
-  if (tag === PURE) {
-    throw new Error(':pure は予約タグ (閉じた作用)');
-  }
-  return new Effect<unknown>(tag, payload, (x: unknown) => Effect.pure(x));
+export function op<P, A>(tag: string, payload: P, decode: ResponseDecoder<A>): Effect<A> {
+  return Effect.op(tag, payload, decode);
 }
 
 /** op の別名 (プロトタイプ由来の慣習)。 */
@@ -106,22 +140,22 @@ export type HandlerMap = Record<string, (payload: unknown) => unknown>;
  * 演算 (各圏の algebra) が現れてよいのはこの onReturn と handler だけ。
  * 実行は再帰でなく反復 (トランポリン = loop)。
  */
-export function fold<R>(
-  prog: Effect<unknown>,
-  onReturn: (x: unknown) => R,
+export function fold<A, R>(
+  prog: Effect<A>,
+  onReturn: (x: A) => R,
   handlers: HandlerMap,
 ): R {
   let cur = prog;
   for (;;) {
-    if (cur.tag === PURE && cur.k === null) {
-      return onReturn(cur.payload);
+    const step = cur.step();
+    if (step.closed) {
+      return onReturn(step.value);
     }
-    const h = handlers[cur.tag];
+    const h = handlers[step.tag];
     if (!h) {
-      throw new Error(`no handler for effect: ${cur.tag}`);
+      throw new Error(`no handler for effect: ${step.tag}`);
     }
-    const next = cur.k!(h(cur.payload));
-    cur = next;
+    cur = step.resume(h(step.payload));
   }
 }
 
@@ -129,6 +163,6 @@ export function fold<R>(
  * run — fold の素直な特化 (onReturn = 恒等)。
  * 同一 program を書き換えず handlers を差し替えるだけで圏を選ぶ。
  */
-export function run(prog: Effect<unknown>, handlers: HandlerMap): unknown {
+export function run<A>(prog: Effect<A>, handlers: HandlerMap): A {
   return fold(prog, (x) => x, handlers);
 }

@@ -15,13 +15,19 @@
 import * as Darkcore from '../darkcore.js';
 import { ResultOps } from '../result.js';
 import { Focus } from '../focus.js';
-import type { Task } from '../task.js';
 import type { Parallel } from '../parallel.js';
 import type { Branch } from '../branch.js';
 import type { Rescue } from '../rescue.js';
 import type { BerylxNode } from '../node.js';
 import { TASK, PARALLEL, BRANCH, RESCUE, run, runSubtree, type DryRun } from './index.js';
 import { branchMatches } from './combinators.js';
+import {
+  decodeTaskPayload,
+  decodeParallelPayload,
+  decodeBranchPayload,
+  decodeRescuePayload,
+  type TaskPayload,
+} from './payload.js';
 
 /**
  * dry-run: Task を実行せず計画 (Task 名の列) を列挙する。常に Ok(focus) を返す
@@ -40,23 +46,23 @@ export function dryRun(node: BerylxNode, focus: unknown): DryRun {
  */
 function dryHandlers(steps: string[]): Darkcore.HandlerMap {
   return {
-    [TASK]: (payload) => dryTask(payload as [Task, Focus], steps),
+    [TASK]: (payload) => dryTask(decodeTaskPayload(payload), steps),
     [PARALLEL]: (payload) => {
-      const [node, focus] = payload as [Parallel, Focus];
+      const [node, focus] = decodeParallelPayload(payload);
       return dryParallel(node, focus, steps);
     },
     [BRANCH]: (payload) => {
-      const [node, focus] = payload as [Branch, Focus];
+      const [node, focus] = decodeBranchPayload(payload);
       return dryBranch(node, focus, steps);
     },
     [RESCUE]: (payload) => {
-      const [node, focus] = payload as [Rescue, Focus];
+      const [node, focus] = decodeRescuePayload(payload);
       return dryRescue(node, focus, steps);
     },
   };
 }
 
-function dryTask(payload: [Task, Focus], steps: string[]) {
+function dryTask(payload: TaskPayload, steps: string[]) {
   const [task, focus] = payload;
   steps.push(task.name);
   return ResultOps.ok(focus); // Task の block は呼ばない (副作用ゼロ)。

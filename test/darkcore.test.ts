@@ -249,4 +249,25 @@ describe('Darkcore.IOEffects dual-run (real vs virtual)', () => {
   it('pure fold is the identity terminal', () => {
     expect(fold(pure(123), (x) => x, {})).toBe(123);
   });
+
+  it('decodes handler responses before bind and rejects malformed responses', () => {
+    const effect = Darkcore.op('lookup', null, (value) => {
+      if (typeof value !== 'number') {
+        throw new TypeError('lookup handler must return a number');
+      }
+      return value;
+    }).bind((value) => pure(value + 1));
+
+    expect(fold(effect, (value) => value, { lookup: () => 41 })).toBe(42);
+    expect(() => fold(effect, (value) => value, { lookup: () => '41' })).toThrow(
+      /must return a number/,
+    );
+    expect(() => fold(IOEffects.exists('/x'), (value) => value, { exists: () => 'yes' })).toThrow(
+      /must return a boolean/,
+    );
+  });
+
+  it('rejects malformed concrete IO payloads at the handler boundary', () => {
+    expect(() => realHandlers().write(['/only-a-path'])).toThrow(/\[string, string\] tuple/);
+  });
 });

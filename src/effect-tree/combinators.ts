@@ -21,6 +21,7 @@ import { runSubtree, RECOVER, type DryRun } from './index.js';
 import type { Reducer } from '../merge.js';
 import { Perform } from '../perform.js';
 import { ControlSignal } from '../control-signal.js';
+import { decodeResult } from './payload.js';
 
 // ----------------------------------------------------------------
 // Parallel — Parallel#call と同一セマンティクス。各 branch を副木として実行し、
@@ -135,7 +136,7 @@ export function runRescue(node: Rescue, focus: Focus, handlers: Darkcore.Handler
   if (result instanceof Ok) {
     return result;
   }
-  return dispatchRecover(node, result as Err, handlers);
+  return dispatchRecover(node, result, handlers);
 }
 
 /** Rescue/Catch の回復も RECOVER effect として現在の map へ dispatch する。 */
@@ -145,8 +146,8 @@ export function dispatchRecover(
   handlers: Darkcore.HandlerMap,
 ): Result {
   return Darkcore.fold(
-    Darkcore.op(RECOVER, [node, errorResult]),
-    (value) => value as Result,
+    Darkcore.op(RECOVER, [node, errorResult], decodeResult),
+    (value) => value,
     handlers,
   );
 }

@@ -102,6 +102,28 @@ describe('EffectTree', () => {
     expect(focus).toBeInstanceOf(Focus);
   });
 
+  it('rejects malformed built-in handler payloads', () => {
+    const handlers = EffectTree.realHandlers();
+    for (const tag of [
+      EffectTree.TASK,
+      EffectTree.PARALLEL,
+      EffectTree.BRANCH,
+      EffectTree.RESCUE,
+      EffectTree.RECOVER,
+    ]) {
+      expect(() => handlers[tag](null)).toThrow(/payload must be/);
+    }
+  });
+
+  it('rejects a handler response that is not a Result envelope', () => {
+    const handlers = EffectTree.realHandlers();
+    handlers[EffectTree.TASK] = () => 'not a result';
+
+    expect(() => EffectTree.run(strip(), { name: '  mina  ' }, handlers)).toThrow(
+      /handler must return Ok or Err/,
+    );
+  });
+
   it('test_dry_run_enumerates_plan_without_executing', () => {
     const workflow = strip().then(boom()).then(greet());
     const dry = EffectTree.dryRun(workflow, { name: '  mina  ' });

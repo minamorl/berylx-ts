@@ -35,6 +35,15 @@ import { Branch } from '../branch.js';
 import { Rescue, Catch } from '../rescue.js';
 import type { BerylxNode } from '../node.js';
 import { Perform } from '../perform.js';
+import {
+  decodeResult,
+  decodeTaskPayload,
+  decodeParallelPayload,
+  decodeBranchPayload,
+  decodeRescuePayload,
+  decodeRecoverPayload,
+  type TaskPayload,
+} from './payload.js';
 
 /** berylx 合成子を darkcore Effect 木にディスパッチするためのタグ。 */
 export const TASK = 'berylx_task';
@@ -58,7 +67,7 @@ export interface DryRun {
 }
 
 /** darkcore Effect 木を組み立てる Kleisli 矢 (Focus → Effect)。 */
-type Arrow = (focus: Focus) => Darkcore.Effect<unknown>;
+type Arrow = (focus: Focus) => Darkcore.Effect<Result>;
 
 /**
  * compile — berylx ノードを「Focus を受け取り darkcore Effect を返す」
@@ -71,16 +80,16 @@ function compile(node: BerylxNode): Arrow {
     return compileSequence(node);
   }
   if (node instanceof Task || node instanceof AsyncTask) {
-    return (focus: Focus) => Darkcore.op(TASK, [node, focus]);
+    return (focus: Focus) => Darkcore.op(TASK, [node, focus], decodeResult);
   }
   if (node instanceof Parallel) {
-    return (focus: Focus) => Darkcore.op(PARALLEL, [node, focus]);
+    return (focus: Focus) => Darkcore.op(PARALLEL, [node, focus], decodeResult);
   }
   if (node instanceof Branch) {
-    return (focus: Focus) => Darkcore.op(BRANCH, [node, focus]);
+    return (focus: Focus) => Darkcore.op(BRANCH, [node, focus], decodeResult);
   }
   if (node instanceof Rescue) {
-    return (focus: Focus) => Darkcore.op(RESCUE, [node, focus]);
+    return (focus: Focus) => Darkcore.op(RESCUE, [node, focus], decodeResult);
   }
   if (node instanceof Catch) {
     return (focus: Focus) => Darkcore.pure(ResultOps.ok(focus));
@@ -98,8 +107,8 @@ function compile(node: BerylxNode): Arrow {
  */
 function compileSequence(node: Sequence): Arrow {
   return (focus: Focus) =>
-    node.steps.reduce<Darkcore.Effect<unknown>>(
-      (effect, step) => effect.bind((prev) => compileStep(step, prev as Result)),
+    node.steps.reduce<Darkcore.Effect<Result>>(
+      (effect, step) => effect.bind((prev) => compileStep(step, prev)),
       Darkcore.pure(ResultOps.ok(focus)),
     );
 }
@@ -109,28 +118,28 @@ function compileSequence(node: Sequence): Arrow {
  * 成功時は素通りし、直前が Err のときだけ (かつ catches が真のとき) 回復させる。
  * 非 Catch は Err なら短絡 (prev を前送り)、Ok なら実行する。
  */
-function compileStep(step: BerylxNode, prev: Result): Darkcore.Effect<unknown> {
+function compileStep(step: BerylxNode, prev: Result): Darkcore.Effect<Result> {
   if (step instanceof Catch) {
     return compileCatch(step, prev);
   }
   if (prev instanceof Err) {
     return Darkcore.pure(prev);
   }
-  return compile(step)((prev as Ok).focus);
+  return compile(step)(prev.focus);
 }
 
-function compileCatch(step: Catch, prev: Result): Darkcore.Effect<unknown> {
+function compileCatch(step: Catch, prev: Result): Darkcore.Effect<Result> {
   if (!(prev instanceof Err) || !step.catches(prev)) {
     return Darkcore.pure(prev);
   }
-  return Darkcore.op(RECOVER, [step, prev]);
+  return Darkcore.op(RECOVER, [step, prev], decodeResult);
 }
 
 /**
  * berylx ノードと初期 focus から darkcore Effect 木を組み立てる。
  * 実行はしない (handler を渡すまで作用は起きない)。
  */
-export function build(node: BerylxNode, focus: unknown): Darkcore.Effect<unknown> {
+export function build(node: BerylxNode, focus: unknown): Darkcore.Effect<Result> {
   return compile(node)(ResultOps.coerceFocus(focus));
 }
 
@@ -144,7 +153,7 @@ export function run(
   focus: unknown,
   handlers: Darkcore.HandlerMap = realHandlers(),
 ): Result {
-  return Darkcore.fold(build(node, focus), (x) => x as Result, handlers);
+  return Darkcore.fold(build(node, focus), (x) => x, handlers);
 }
 
 /**
@@ -166,28 +175,28 @@ export function realHandlers(
 
   const handlers: Darkcore.HandlerMap = {};
   const current = () => subtree ?? handlers;
-  handlers[TASK] = (payload) => realTask(payload as [Task | AsyncTask, Focus], current());
+  handlers[TASK] = (payload) => realTask(decodeTaskPayload(payload), current());
   handlers[PARALLEL] = (payload) => {
-    const [node, focus] = payload as [Parallel, Focus];
+    const [node, focus] = decodeParallelPayload(payload);
     return runParallel(node, focus, current());
   };
   handlers[BRANCH] = (payload) => {
-    const [node, focus] = payload as [Branch, Focus];
+    const [node, focus] = decodeBranchPayload(payload);
     return runBranch(node, focus, current());
   };
   handlers[RESCUE] = (payload) => {
-    const [node, focus] = payload as [Rescue, Focus];
+    const [node, focus] = decodeRescuePayload(payload);
     return runRescue(node, focus, current());
   };
   handlers[RECOVER] = (payload) => {
-    const [node, errorResult] = payload as [Rescue | Catch, Err];
+    const [node, errorResult] = decodeRecoverPayload(payload);
     return realRecover(node, errorResult, current());
   };
   Object.assign(handlers, effects);
   return handlers;
 }
 
-function realTask(payload: [Task | AsyncTask, Focus], handlers: Darkcore.HandlerMap): Result {
+function realTask(payload: TaskPayload, handlers: Darkcore.HandlerMap): Result {
   const [task, focus] = payload;
   if (task instanceof Task) {
     return task.call(focus, task.effectful() ? new Perform(handlers) : undefined);
@@ -217,7 +226,7 @@ export function around(
  * berylx 結果封筒 (Ok/Err) を得る。合成子 handler が枝の実行に使う。
  */
 export function runSubtree(node: BerylxNode, focus: Focus, handlers: Darkcore.HandlerMap): Result {
-  return Darkcore.fold(build(node, focus), (x) => x as Result, handlers);
+  return Darkcore.fold(build(node, focus), (x) => x, handlers);
 }
 
 // combinators / dry-run から使う内部関数を集約したオブジェクト。
