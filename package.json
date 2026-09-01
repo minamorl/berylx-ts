@@ -1,6 +1,6 @@
 {
   "name": "@minamorl/berylx",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Graphable TypeScript workflows over focused, recoverable state.",
   "type": "module",
   "main": "dist/index.js",
@@ -38,6 +38,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run && node scripts/check-types.mjs",
     "test:watch": "vitest",
