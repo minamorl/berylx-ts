@@ -23,6 +23,13 @@ import { Rescue, RescueBlock, type RescueHandler } from '../rescue.js';
 import type { BerylxNode } from '../node.js';
 import { build, TASK, PARALLEL, BRANCH, RESCUE } from './index.js';
 import {
+  decodeTaskPayload,
+  decodeParallelPayload,
+  decodeBranchPayload,
+  decodeRescuePayload,
+  type TaskPayload,
+} from './payload.js';
+import {
   parallelHandleFailures,
   parallelMerge,
   branchMatches,
@@ -36,17 +43,17 @@ import {
  */
 export function asyncRealHandlers(): Darkcore.AsyncHandlerMap {
   return {
-    [TASK]: (payload) => asyncRealTask(payload as [Task | AsyncTask, Focus]),
+    [TASK]: (payload) => asyncRealTask(decodeTaskPayload(payload)),
     [PARALLEL]: (payload) => {
-      const [node, focus] = payload as [Parallel, Focus];
+      const [node, focus] = decodeParallelPayload(payload);
       return runParallelAsync(node, focus, asyncRealHandlers());
     },
     [BRANCH]: (payload) => {
-      const [node, focus] = payload as [Branch, Focus];
+      const [node, focus] = decodeBranchPayload(payload);
       return runBranchAsync(node, focus, asyncRealHandlers());
     },
     [RESCUE]: (payload) => {
-      const [node, focus] = payload as [Rescue, Focus];
+      const [node, focus] = decodeRescuePayload(payload);
       return runRescueAsync(node, focus, asyncRealHandlers());
     },
   };
@@ -61,7 +68,7 @@ export function runAsync(
   focus: unknown,
   handlers: Darkcore.AsyncHandlerMap = asyncRealHandlers(),
 ): Promise<Result> {
-  return Darkcore.foldAsync(build(node, ResultOps.coerceFocus(focus)), (x) => x as Result, handlers);
+  return Darkcore.foldAsync(build(node, ResultOps.coerceFocus(focus)), (x) => x, handlers);
 }
 
 /** 非同期副木実行ヘルパ (合成子 handler が枝の実行に使う)。 */
@@ -70,10 +77,10 @@ export function runSubtreeAsync(
   focus: Focus,
   handlers: Darkcore.AsyncHandlerMap,
 ): Promise<Result> {
-  return Darkcore.foldAsync(build(node, focus), (x) => x as Result, handlers);
+  return Darkcore.foldAsync(build(node, focus), (x) => x, handlers);
 }
 
-async function asyncRealTask(payload: [Task | AsyncTask, Focus]): Promise<Result> {
+async function asyncRealTask(payload: TaskPayload): Promise<Result> {
   const [task, focus] = payload;
   if (task instanceof AsyncTask) {
     return task.callAsync(focus);
@@ -129,7 +136,7 @@ export async function runRescueAsync(
   if (result instanceof Ok) {
     return result;
   }
-  return recoverAsync(node.handler, result as Err);
+  return recoverAsync(node.handler, result);
 }
 
 /**

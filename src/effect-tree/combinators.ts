@@ -119,7 +119,7 @@ export function runRescue(node: Rescue, focus: Focus, handlers: Darkcore.Handler
   if (result instanceof Ok) {
     return result;
   }
-  return recover(node.handler, result as Err);
+  return recover(node.handler, result);
 }
 
 /**
