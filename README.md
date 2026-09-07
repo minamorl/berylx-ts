@@ -2,6 +2,8 @@
 
 **Composable, inspectable workflows with immutable state and recoverable failures.**
 
+Read the [introduction](https://berylx.niktseft.chatgpt.site) for a guided tour.
+
 Berylx is a TypeScript port of the Ruby [berylx](https://github.com/minamorl/berylx)
 gem. It gives multistep workflows a small set of building blocks: named tasks,
 sequences, branches, parallel composition, and recovery handlers.
@@ -39,7 +41,7 @@ The package uses ES modules, includes TypeScript declarations, and requires Node
 Declare the state type once with `berylx<S>()`, then build tasks using that type:
 
 ```ts
-import { berylx } from '@minamorl/berylx';
+import { berylx } from "@minamorl/berylx";
 
 interface GreetingState {
   name: string;
@@ -48,16 +50,16 @@ interface GreetingState {
 
 const b = berylx<GreetingState>();
 
-const stripName = b.task('strip_name', (focus) =>
-  focus.at('name').update((name) => name.trim()),
+const stripName = b.task("strip_name", (focus) =>
+  focus.at("name").update((name) => name.trim()),
 );
 
-const greet = b.task('greet', (focus) =>
-  focus.at('greeting').set(`Hello, ${focus.at('name').get()}!`),
+const greet = b.task("greet", (focus) =>
+  focus.at("greeting").set(`Hello, ${focus.at("name").get()}!`),
 );
 
 const workflow = stripName.then(greet);
-const root = b.root({ name: '  Mina  ', greeting: '' });
+const root = b.root({ name: "  Mina  ", greeting: "" });
 const result = root.pipe(workflow);
 
 result.focus.toObject();
@@ -79,17 +81,20 @@ the partial state.
 `update()` returns a new focus at the root. The original focus remains unchanged.
 
 ```ts
-import { Focus } from '@minamorl/berylx';
+import { Focus } from "@minamorl/berylx";
 
-const original = Focus.of({ user: { name: '  Mina  ', age: 21 } });
-const updated = original.at('user').at('name').update((name) => name.trim());
+const original = Focus.of({ user: { name: "  Mina  ", age: 21 } });
+const updated = original
+  .at("user")
+  .at("name")
+  .update((name) => name.trim());
 
-original.at('user').at('name').get(); // '  Mina  '
-updated.at('user').at('name').get();  // 'Mina'
-updated.toObject();                 // { user: { name: 'Mina', age: 21 } }
+original.at("user").at("name").get(); // '  Mina  '
+updated.at("user").at("name").get(); // 'Mina'
+updated.toObject(); // { user: { name: 'Mina', age: 21 } }
 
 // @ts-expect-error Only 'name' and 'age' are valid keys here.
-original.at('user').at('nmae');
+original.at("user").at("nmae");
 ```
 
 Plain objects and arrays are defensively copied and deeply frozen. Values such as
@@ -108,17 +113,17 @@ execution mechanism. For dynamic state, unparameterized `Task.of()` and
 
 ## Composing workflows
 
-| Operation | API | Behavior |
-| --- | --- | --- |
-| Sequence | `a.then(b)` | Run `b` with the successful result of `a`. |
-| Parallel composition | `a.par(b)` | Run both branches from the same snapshot and merge their results. |
-| Conditional branch | `When.of(name, predicate).then(task)` | Run an arm when its predicate matches. |
-| Additional arm | `arm.or(otherArm)` | Try arms in order; the first match wins. |
-| Fallback arm | `arm.or(Else.then(task))` | Supply a final unconditional arm. |
-| Recovery boundary | `workflow.then(Catch.of(...))` | Recover an earlier failure and allow the sequence to continue. |
-| Recovery wrapper | `workflow.rescueWith(handler)` | Run a handler if the wrapped workflow fails. |
-| Execute and commit | `root.pipe(workflow)` | Commit only a successful result. |
-| Execute without a root | `Flow.of(state).call(workflow)` | Return a result without committing to a root. |
+| Operation              | API                                   | Behavior                                                          |
+| ---------------------- | ------------------------------------- | ----------------------------------------------------------------- |
+| Sequence               | `a.then(b)`                           | Run `b` with the successful result of `a`.                        |
+| Parallel composition   | `a.par(b)`                            | Run both branches from the same snapshot and merge their results. |
+| Conditional branch     | `When.of(name, predicate).then(task)` | Run an arm when its predicate matches.                            |
+| Additional arm         | `arm.or(otherArm)`                    | Try arms in order; the first match wins.                          |
+| Fallback arm           | `arm.or(Else.then(task))`             | Supply a final unconditional arm.                                 |
+| Recovery boundary      | `workflow.then(Catch.of(...))`        | Recover an earlier failure and allow the sequence to continue.    |
+| Recovery wrapper       | `workflow.rescueWith(handler)`        | Run a handler if the wrapped workflow fails.                      |
+| Execute and commit     | `root.pipe(workflow)`                 | Commit only a successful result.                                  |
+| Execute without a root | `Flow.of(state).call(workflow)`       | Return a result without committing to a root.                     |
 
 Ordinary `Task` execution is synchronous, including the branches of `par`.
 For concurrent asynchronous branches, use `AsyncTask` and
@@ -135,20 +140,20 @@ Every parallel branch starts from the same base snapshot. The default reducer,
 - Incompatible updates to the same path return an `Err` with code `merge_conflict`.
 
 ```ts
-import { Flow, Task } from '@minamorl/berylx';
+import { Flow, Task } from "@minamorl/berylx";
 
-const setA = Task.of('set_a', (focus) => focus.at('a').set(1));
-const setB = Task.of('set_b', (focus) => focus.at('b').set(1));
+const setA = Task.of("set_a", (focus) => focus.at("a").set(1));
+const setB = Task.of("set_b", (focus) => focus.at("b").set(1));
 
 const merged = Flow.of({ a: 0, b: 0 }).call(setA.par(setB));
 merged.focus.toObject(); // { a: 1, b: 1 }
 
-const paid = Task.of('paid', (focus) => focus.at('status').set('paid'));
-const trial = Task.of('trial', (focus) => focus.at('status').set('trial'));
+const paid = Task.of("paid", (focus) => focus.at("status").set("paid"));
+const trial = Task.of("trial", (focus) => focus.at("status").set("trial"));
 
 const conflict = Flow.of({ status: null }).call(paid.par(trial));
 if (conflict.isErr()) {
-  conflict.code;             // 'merge_conflict'
+  conflict.code; // 'merge_conflict'
   conflict.focus.toObject(); // { status: null }
 }
 ```
@@ -161,7 +166,7 @@ base. It can overwrite independent updates to existing keys. Choose it explicitl
 when that behavior is intended:
 
 ```ts
-import { Merge, Parallel } from '@minamorl/berylx';
+import { Merge, Parallel } from "@minamorl/berylx";
 
 const rightBiased = new Parallel([setA, setB]).reduce(Merge.deep());
 ```
@@ -176,17 +181,22 @@ are also converted to `Err` results. A `BerylxError` records information such as
 the error code, failed task, trace, cause, and parallel failures.
 
 ```ts
-import { Catch, Root, Task } from '@minamorl/berylx';
+import { Catch, Root, Task } from "@minamorl/berylx";
 
-const charge = Task.of('charge', (focus) =>
-  focus.at('chargeAttempted').set(true).reject('payment_failed', 'Card declined'),
+const charge = Task.of("charge", (focus) =>
+  focus
+    .at("chargeAttempted")
+    .set(true)
+    .reject("payment_failed", "Card declined"),
 );
 
-const recordFailure = Catch.of('record_failure', null, {}, (error, focus) =>
-  focus.at('failure').set(error instanceof Error ? error.message : String(error)),
+const recordFailure = Catch.of("record_failure", null, {}, (error, focus) =>
+  focus
+    .at("failure")
+    .set(error instanceof Error ? error.message : String(error)),
 );
 
-const notify = Task.of('notify', (focus) => focus.at('notified').set(true));
+const notify = Task.of("notify", (focus) => focus.at("notified").set(true));
 const workflow = charge.then(recordFailure).then(notify);
 const root = Root.of({ chargeAttempted: false });
 
@@ -210,20 +220,20 @@ Use `AsyncTask.of()` for callbacks that return promises, and run workflows that
 contain them with `EffectTree.runAsync()`:
 
 ```ts
-import { AsyncTask, EffectTree } from '@minamorl/berylx';
+import { AsyncTask, EffectTree } from "@minamorl/berylx";
 
-const loadName = AsyncTask.of('load_name', async (focus) => {
-  const name = await Promise.resolve('Mina');
-  return focus.at('name').set(name);
+const loadName = AsyncTask.of("load_name", async (focus) => {
+  const name = await Promise.resolve("Mina");
+  return focus.at("name").set(name);
 });
 
-const loadTotal = AsyncTask.of('load_total', async (focus) => {
+const loadTotal = AsyncTask.of("load_total", async (focus) => {
   const total = await Promise.resolve(42);
-  return focus.at('total').set(total);
+  return focus.at("total").set(total);
 });
 
 const result = await EffectTree.runAsync(loadName.par(loadTotal), {
-  name: '',
+  name: "",
   total: 0,
 });
 
@@ -241,9 +251,9 @@ Using the `workflow` from the quick start, list task names without running task
 callbacks:
 
 ```ts
-import { EffectTree } from '@minamorl/berylx';
+import { EffectTree } from "@minamorl/berylx";
 
-const dry = EffectTree.dryRun(workflow, { name: '  Mina  ', greeting: '' });
+const dry = EffectTree.dryRun(workflow, { name: "  Mina  ", greeting: "" });
 dry.steps; // ['strip_name', 'greet']
 ```
 
@@ -254,11 +264,11 @@ invoked by a simulated failure.
 Compile a workflow into an inspectable graph or export it as DOT or Mermaid:
 
 ```ts
-import { Graph } from '@minamorl/berylx';
+import { Graph } from "@minamorl/berylx";
 
 const graph = Graph.from(workflow);
-graph.nodes();     // ['strip_name', 'greet']
-graph.toDot();     // A Graphviz digraph.
+graph.nodes(); // ['strip_name', 'greet']
+graph.toDot(); // A Graphviz digraph.
 graph.toMermaid(); // A Mermaid flowchart.
 ```
 
@@ -275,16 +285,16 @@ with different handlers.
 
 ## API overview
 
-| Area | Exports |
-| --- | --- |
-| State | `Focus`, `Lay`, `Root`, `State`, `Flow`, `berylx` |
-| Composition | `Task`, `AsyncTask`, `Sequence`, `Parallel`, `When`, `Else`, `Branch`, `Catch`, `Rescue`, `Workflow` |
-| Results | `Ok`, `Err`, `ResultOps`, `BerylxError` |
-| Merge reducers | `Merge.strict`, `Merge.deep`, `Merge.keepLeft`, `Merge.keepRight` |
-| Execution | `EffectTree`, `Perform`, `Darkcore` |
-| Graphs | `Graph`, `Graph.toDot()`, `Graph.toMermaid()` |
-| Compatibility | `attachRoot`, `fromCrayResult`, `toCrayResult`, `Cray`, `CraySuccess`, `CrayFailure` |
-| Helpers | `run(workflow, focus)`, `task(name, block)` |
+| Area           | Exports                                                                                              |
+| -------------- | ---------------------------------------------------------------------------------------------------- |
+| State          | `Focus`, `Lay`, `Root`, `State`, `Flow`, `berylx`                                                    |
+| Composition    | `Task`, `AsyncTask`, `Sequence`, `Parallel`, `When`, `Else`, `Branch`, `Catch`, `Rescue`, `Workflow` |
+| Results        | `Ok`, `Err`, `ResultOps`, `BerylxError`                                                              |
+| Merge reducers | `Merge.strict`, `Merge.deep`, `Merge.keepLeft`, `Merge.keepRight`                                    |
+| Execution      | `EffectTree`, `Perform`, `Darkcore`                                                                  |
+| Graphs         | `Graph`, `Graph.toDot()`, `Graph.toMermaid()`                                                        |
+| Compatibility  | `attachRoot`, `fromCrayResult`, `toCrayResult`, `Cray`, `CraySuccess`, `CrayFailure`                 |
+| Helpers        | `run(workflow, focus)`, `task(name, block)`                                                          |
 
 `Darkcore` also exports `Maybe`, `Either`, `Result`, `State`, `Validation`, and
 `IOEffects` with `VirtualWorld`. Its `Ok` and `Err` types are separate from
@@ -294,15 +304,15 @@ Berylx's workflow result types.
 
 Ruby operators map to methods in TypeScript:
 
-| Ruby | TypeScript | Purpose |
-| --- | --- | --- |
-| `a >> b` | `a.then(b)` | Sequence |
-| `a & b` | `a.par(b)` | Parallel composition |
-| `root \| workflow` | `root.pipe(workflow)` | Execute and commit |
-| `state \| task` | `state.pipe(task)` | Execute in state space |
-| `state & task` | `state.and(task)` | Accumulate a node in a new `State` |
-| `When[:name] { ... }` | `When.of('name', predicate)` | Define a condition |
-| `arm \| Else` | `arm.or(Else.then(task))` | Add a fallback arm |
+| Ruby                  | TypeScript                   | Purpose                            |
+| --------------------- | ---------------------------- | ---------------------------------- |
+| `a >> b`              | `a.then(b)`                  | Sequence                           |
+| `a & b`               | `a.par(b)`                   | Parallel composition               |
+| `root \| workflow`    | `root.pipe(workflow)`        | Execute and commit                 |
+| `state \| task`       | `state.pipe(task)`           | Execute in state space             |
+| `state & task`        | `state.and(task)`            | Accumulate a node in a new `State` |
+| `When[:name] { ... }` | `When.of('name', predicate)` | Define a condition                 |
+| `arm \| Else`         | `arm.or(Else.then(task))`    | Add a fallback arm                 |
 
 See [MIGRATION.md](./MIGRATION.md) for the migration plan from the
 `@minamorl/cray` and `@minamorl/lay` packages in `root-paradigm`, including

@@ -11,18 +11,18 @@ are implemented; consumer migration and deprecation remain separate work.
 
 ## API mapping
 
-| Existing API | Berylx API | Migration notes |
-| --- | --- | --- |
-| `@minamorl/lay` `Focus<S>` | `Focus` and `Root.subscribe()` | `Focus.set()` returns a new immutable focus. Subscribe to committed state through `Root`. |
-| `cray()` | `Task` or `task()` | A named state transition. |
-| cray sequence | `Sequence` or `node.then()` | Sequential composition. |
-| `parallel()` and `Reducer` | `Parallel`, `node.par()`, and `Merge` | Error policy is selected with `short_circuit` or `accumulate`. |
-| `branch()`, `else_`, `elseCray` | `When`, `Else`, `Branch`, and `Catch` | Conditional branches and recovery boundaries. |
-| `Success` / `Failure` | `Ok` / `Err` | Errors use `BerylxError` with code, failed node, trace, and parallel errors. |
-| `compile()`, `execute()`, `Graph` | `Graph` and `Graph.from(node)` | Compile workflow structure for inspection. |
-| `toMermaid()` | `Graph.toMermaid()` and `Graph.toDot()` | Export Mermaid or DOT. |
-| `attachCray()` | `attachRoot()` | A framework-independent subscription bridge. |
-| Ruby darkcore runtime | Bundled `src/darkcore/` modules | Re-exported through `src/darkcore.ts`. |
+| Existing API                      | Berylx API                              | Migration notes                                                                           |
+| --------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `@minamorl/lay` `Focus<S>`        | `Focus` and `Root.subscribe()`          | `Focus.set()` returns a new immutable focus. Subscribe to committed state through `Root`. |
+| `cray()`                          | `Task` or `task()`                      | A named state transition.                                                                 |
+| cray sequence                     | `Sequence` or `node.then()`             | Sequential composition.                                                                   |
+| `parallel()` and `Reducer`        | `Parallel`, `node.par()`, and `Merge`   | Error policy is selected with `short_circuit` or `accumulate`.                            |
+| `branch()`, `else_`, `elseCray`   | `When`, `Else`, `Branch`, and `Catch`   | Conditional branches and recovery boundaries.                                             |
+| `Success` / `Failure`             | `Ok` / `Err`                            | Errors use `BerylxError` with code, failed node, trace, and parallel errors.              |
+| `compile()`, `execute()`, `Graph` | `Graph` and `Graph.from(node)`          | Compile workflow structure for inspection.                                                |
+| `toMermaid()`                     | `Graph.toMermaid()` and `Graph.toDot()` | Export Mermaid or DOT.                                                                    |
+| `attachCray()`                    | `attachRoot()`                          | A framework-independent subscription bridge.                                              |
+| Ruby darkcore runtime             | Bundled `src/darkcore/` modules         | Re-exported through `src/darkcore.ts`.                                                    |
 
 ## Behavior to account for
 
@@ -90,8 +90,8 @@ favors the right-hand value and can overwrite independent updates to existing ke
 ### Stage 1: Inventory consumers
 
 - [ ] List every import of `@minamorl/cray` and `@minamorl/lay`. Initial candidates
-  include `packages/examples`, `host`, and `server` in `root-paradigm`; search
-  other consuming repositories as well.
+      include `packages/examples`, `host`, and `server` in `root-paradigm`; search
+      other consuming repositories as well.
 - [ ] Record which APIs each consumer uses and which migration adaptations it needs.
 
 ### Stage 2: Confirm distribution and integration
@@ -101,27 +101,27 @@ publication to the npm registry. The earlier plan also considered incorporating
 the library into `root-paradigm` as `packages/berylx`.
 
 - [ ] Confirm how each consumer will obtain the package and resolve any remaining
-  monorepo integration requirements.
+      monorepo integration requirements.
 
 ### Stage 3: Close compatibility gaps — complete
 
 - [x] **Asynchronous tasks.** `AsyncTask.callAsync()` and
-  `EffectTree.runAsync()` provide promise-based execution. The asynchronous
-  interpreter shares the synchronous workflow result and merge semantics.
+      `EffectTree.runAsync()` provide promise-based execution. The asynchronous
+      interpreter shares the synchronous workflow result and merge semantics.
 - [x] **Result adapters.** `CraySuccess`, `CrayFailure`, `Cray`,
-  `fromCrayResult()`, and `toCrayResult()` bridge result representations.
+      `fromCrayResult()`, and `toCrayResult()` bridge result representations.
 - [x] **Mermaid export.** `Graph.toMermaid()` generates a `flowchart TD` from the
-  same workflow structure used for DOT export. Generated node IDs satisfy Mermaid
-  identifier requirements, while labels preserve task names.
+      same workflow structure used for DOT export. Generated node IDs satisfy Mermaid
+      identifier requirements, while labels preserve task names.
 - [x] **Host subscription bridge.** `attachRoot()` projects snapshot and commit
-  events through `select`, passes them to a host, and returns an unsubscribe
-  function. It has no React dependency.
+      events through `select`, passes them to a host, and returns an unsubscribe
+      function. It has no React dependency.
 
 ### Stage 4: Replace and deprecate
 
 - [ ] Migrate consumers one package at a time and verify their tests after each change.
 - [ ] Deprecate `@minamorl/cray` and `@minamorl/lay`, identifying Berylx as the
-  replacement in their package metadata and documentation.
+      replacement in their package metadata and documentation.
 - [ ] Remove the old packages from `root-paradigm` once no consumers reference them.
 
 ## Remaining decisions
