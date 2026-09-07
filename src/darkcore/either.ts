@@ -1,15 +1,8 @@
-// ==================================================================
-// Either — Left で短絡 / Right で継続 (Result と同型の教科書版)。
-//
-// darkcore-ruby either.rb の TS 移植。Left は bind/fmap/ap を素通り (短絡)、
-// Right は継続する。pure = Right。fmap/ap は Monad の導出を使う。
-// ==================================================================
-
 import { deriveFmap, deriveAp } from './monad.js';
 
 export type Either<L, R> = Left<L> | Right<R>;
 
-/** 失敗値を運び、以降を短絡する枝。 */
+/** A failure value that short-circuits subsequent operations. */
 export class Left<L> {
   readonly value: L;
 
@@ -50,7 +43,7 @@ export class Left<L> {
   }
 }
 
-/** 成功値を運び、継続する枝。 */
+/** A success value that continues through bind, fmap, and ap. */
 export class Right<R> {
   readonly value: R;
 
@@ -94,7 +87,6 @@ export class Right<R> {
   }
 }
 
-/** Ruby module Either 相当の smart constructor 群。 */
 export const Either = {
   pure: <L, R>(x: R): Either<L, R> => new Right(x),
   left: <L, R>(x: L): Either<L, R> => new Left(x),

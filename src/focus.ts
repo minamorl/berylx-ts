@@ -1,26 +1,14 @@
-// ==================================================================
-// Focus (別名 Lay) — 焦点つき不変状態。
-//
-// Ruby 版 Berylx::Focus の TS 移植。ネストした値をパスで読み書きし、
-// 更新は共有変更なしの immutable な置換で行う。Ruby の Hash に対応する
-// のは plain object。Ruby の struct (#with を持つ値) 相当として、
-// with(patch) メソッドを持つオブジェクトも更新対象に含める。
-// ==================================================================
-
 import { ResultOps, type Result } from './result.js';
 
-/** get のデフォルト値が「未指定」であることを表す番兵。 */
+/** Distinguish an omitted default from an explicitly supplied value. */
 const MISSING: unique symbol = Symbol('berylx.focus.missing');
 
 export type PathKey = string | number | symbol;
 
 /**
- * 焦点の path P を状態 S へ適用した先の型。
- *
- * Focus は zipper なので「いまどこを見ているか」は path が持つ。get の戻り値を
- * 型として言うには path を型に載せるしかない。再帰は path の長さで止まるので
- * 有界であり、深さ無制限の型レベル計算にはならない。
- * S = any (既定・型を付けない使い方) のときは any へ落ちる。
+ * The type reached by following path P through state S. Encoding the current
+ * path in the type determines the return type of get. Recursion is bounded by
+ * the path length; the default S = any keeps untyped usage available.
  */
 export type PathAt<S, P extends readonly PathKey[]> =
   P extends readonly [infer H, ...infer R]
@@ -32,15 +20,13 @@ export type PathAt<S, P extends readonly PathKey[]> =
     : S;
 
 /**
- * path P の先で掘れるキー。
- *
- * スカラの先は掘れないので never にする。そうしないと keyof number が
- * toFixed / toExponential といった prototype メソッドを候補として提案してくる。
+ * Keys accessible at path P. Scalars resolve to never to prevent prototype
+ * methods such as number.toFixed from appearing as navigable state keys.
  */
 export type KeysAt<S, P extends readonly PathKey[]> =
   PathAt<S, P> extends object ? keyof PathAt<S, P> & PathKey : never;
 
-/** #with(patch) を持つ値 (Ruby の struct/Data 相当) の判定用。 */
+/** Support immutable updates on values that expose with(patch). */
 interface WithUpdatable {
   with(patch: Record<PathKey, unknown>): unknown;
 }
@@ -72,7 +58,7 @@ function enumerableOwnKeys(value: object): PathKey[] {
   return Reflect.ownKeys(value).filter((key) => Object.prototype.propertyIsEnumerable.call(value, key));
 }
 
-/** Ruby Freeze.deep と同じ対象を defensive copy し、循環を保ったまま深く凍結する。 */
+/** Defensively copy and deeply freeze arrays and plain records, preserving cycles. */
 function copyAndDeepFreeze(value: unknown): unknown {
   const deeplyFrozen = new WeakMap<object, boolean>();
   const activeCopies = new WeakMap<object, unknown[] | Record<PathKey, unknown>>();
@@ -115,7 +101,7 @@ function copyAndDeepFreeze(value: unknown): unknown {
   };
 
   const copy = (current: unknown): unknown => {
-    // JS 固有の Map/Set/Date/TypedArray/class instances は Ruby のその他の object と同様に触れない。
+    // Map, Set, Date, typed arrays, and class instances retain their identity.
     if (!isDeepFreezeTarget(current)) {
       return current;
     }
@@ -141,7 +127,7 @@ function copyAndDeepFreeze(value: unknown): unknown {
       return frozen;
     }
 
-    // Ruby deep_hash と同様、prototype や property descriptor は素の record へ正規化する。
+    // Normalize prototypes and property descriptors into an ordinary record.
     const rebuilt: Record<PathKey, unknown> = {};
     activeCopies.set(current, rebuilt);
     for (const key of enumerableOwnKeys(current)) {
@@ -161,16 +147,12 @@ function copyAndDeepFreeze(value: unknown): unknown {
 }
 
 /**
- * 焦点つき不変状態。
+ * Immutable state with a current path P into root state S. Supplying S checks
+ * at keys and determines the type returned by get; S = any allows untyped use.
  *
- * 型引数は状態のルート型 S と、いま見ている path P。既定は S = any なので、
- * 型を付けない使い方はこれまでどおり通る。S を与えると at のキーが検査され、
- * get の戻り値が確定する。
- *
- * S は workflow の境界ごとに 1 つ固定される (spec の core.root.singleton)。
- * したがって Task を Focus<A> -> Focus<B> の遷移として型付ける必要はなく、
- * S について単相でよい。set が型を広げないので、object 型を再帰的に組み直す
- * SetAt のような型が要らず、型レベルの計算が path の読み出し一本で済む。
+ * One state type is fixed per workflow boundary (core.root.singleton). Updates
+ * preserve S, so task composition does not need to reconcile changing root types
+ * or recursively rebuild object types after each set.
  */
 export class Focus<S = any, P extends readonly PathKey[] = []> {
   readonly value: S;
@@ -181,21 +163,20 @@ export class Focus<S = any, P extends readonly PathKey[] = []> {
     this.path = Object.freeze([...path]) as unknown as P;
   }
 
-  /** Ruby Focus[value] / Focus.new に対応する smart constructor。 */
   static of<T>(value: T): Focus<T, []>;
   static of(): Focus<any, []>;
   static of(value: unknown = {}): Focus<any, []> {
     return new Focus(value);
   }
 
-  /** パスを 1 段掘る (Ruby Focus#[])。 */
+  /** Return a focus one level deeper without reading the value yet. */
   at<K extends KeysAt<S, P>>(key: K): Focus<S, [...P, K]> {
     return new Focus(this.value, [...this.path, key as PathKey]) as Focus<S, [...P, K]>;
   }
 
   /**
-   * 現在のパスの値を取り出す。パスが辿れない場合、default が渡されていれば
-   * それを返し、無ければ例外を投げる (Ruby Focus#get)。
+   * Read the value at the current path. If traversal fails, return the supplied
+   * default or rethrow the traversal error when no default was provided.
    */
   get(): PathAt<S, P>;
   get<D>(options: { default: D }): PathAt<S, P> | D;
@@ -212,7 +193,7 @@ export class Focus<S = any, P extends readonly PathKey[] = []> {
     }
   }
 
-  /** get のエイリアス。default を位置引数で受ける (Ruby Focus#fetch)。 */
+  /** Like get, with the default value supplied as a positional argument. */
   fetch(): PathAt<S, P>;
   fetch<D>(defaultValue: D): PathAt<S, P> | D;
   fetch(defaultValue: unknown = MISSING): unknown {
@@ -222,12 +203,12 @@ export class Focus<S = any, P extends readonly PathKey[] = []> {
     return this.get({ default: defaultValue });
   }
 
-  /** 値が無ければ null を返す (Ruby Focus#maybe)。 */
+  /** Return null when the current path cannot be read. */
   maybe(): PathAt<S, P> | null {
     return this.get({ default: null });
   }
 
-  /** パスが辿れるか (Ruby Focus#present?)。 */
+  /** Whether the current path can be read. */
   present(): boolean {
     try {
       dig(this.value, this.path);
@@ -237,7 +218,7 @@ export class Focus<S = any, P extends readonly PathKey[] = []> {
     }
   }
 
-  /** パスが辿れれば Ok(self)、辿れなければ Err (Ruby Focus#required)。 */
+  /** Return Ok(this) if the path is readable, or Err with this focus otherwise. */
   required(code = 'missing_focus', message?: string): Result<S> {
     try {
       this.get();
@@ -251,22 +232,22 @@ export class Focus<S = any, P extends readonly PathKey[] = []> {
     }
   }
 
-  /** 現在のパスへ値をセットした新しい Focus をルートで返す (Ruby Focus#set)。 */
+  /** Replace the value at the current path and return a new focus at the root. */
   set(nextValue: PathAt<S, P>): Focus<S, []> {
     return new Focus(assocIn(this.value, this.path, nextValue));
   }
 
-  /** 現在値をブロックで変換してセットする (Ruby Focus#update)。 */
+  /** Transform the current value and return the updated focus at the root. */
   update(block: (current: PathAt<S, P>) => PathAt<S, P>): Focus<S, []> {
     return this.set(block(this.get()));
   }
 
-  /** 子キーへ値をセットする (Ruby Focus#put)。 */
+  /** Set a child value and return the updated focus at the root. */
   put<K extends KeysAt<S, P>>(key: K, nextValue: PathAt<S, [...P, K]>): Focus<S, []> {
     return this.at(key).set(nextValue);
   }
 
-  /** この Focus を部分状態に持つ Err を作る (Ruby Focus#reject)。 */
+  /** Create an Err that retains this focus as its partial state. */
   reject(
     code: string,
     message: string = code,
@@ -275,7 +256,7 @@ export class Focus<S = any, P extends readonly PathKey[] = []> {
     return ResultOps.err(this, code, message, { cause: options.cause });
   }
 
-  /** Ruby Focus#to_h と同様、deep-frozen なルート値を返す。 */
+  /** Return the root value, with arrays and plain records deeply frozen. */
   toObject(): S {
     return this.value;
   }
@@ -291,7 +272,7 @@ export class Focus<S = any, P extends readonly PathKey[] = []> {
   }
 }
 
-/** パスに沿って値を掘る。辿れないキーは例外を投げる (Ruby #dig)。 */
+/** Follow a path, throwing KeyError when a key cannot be traversed. */
 function dig(current: unknown, path: readonly PathKey[]): unknown {
   return path.reduce<unknown>((acc, key) => {
     if (isPlainRecord(acc) || (acc != null && typeof acc === 'object' && !Array.isArray(acc))) {
@@ -312,7 +293,7 @@ function dig(current: unknown, path: readonly PathKey[]): unknown {
   }, current);
 }
 
-/** パスに沿って値を immutable にセットする (Ruby #assoc_in)。 */
+/** Replace a value along a path without mutating existing containers. */
 function assocIn(current: unknown, path: readonly PathKey[], nextValue: unknown): unknown {
   if (path.length === 0) {
     return nextValue;
@@ -340,7 +321,7 @@ function assocIn(current: unknown, path: readonly PathKey[], nextValue: unknown)
   throw new TypeError(`cannot update ${typeof current} at ${String(key)}`);
 }
 
-/** Ruby の KeyError 相当 (dig で辿れなかったときに投げる)。 */
+/** Raised when a focus path cannot be traversed. */
 export class KeyError extends Error {
   constructor(key: PathKey) {
     super(`key not found: ${String(key)}`);

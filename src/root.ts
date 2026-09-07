@@ -1,12 +1,3 @@
-// ==================================================================
-// Root — workflow のコミット済み状態を所有する唯一の境界。
-//
-// Ruby 版 Berylx::Root の TS 移植。Ruby State#new(@value).call(node) →
-// commit_result のパイプラインを踏襲する。Ruby の演算子は次へ写す:
-//   Root#|      → pipe (ノードを実行し Ok ならコミット)
-//   Root#[]     → at  (Focus を子キーへ掘る)
-// ==================================================================
-
 import { ResultOps, Ok, Err, type Result } from './result.js';
 import { Focus, type KeysAt } from './focus.js';
 import { Merge } from './merge.js';
@@ -15,13 +6,14 @@ import { State } from './state.js';
 import { EffectTree } from './effect-tree/index.js';
 import type { HandlerMap } from './darkcore.js';
 
-/** subscribe に流れるイベント。 */
+/** Events delivered to Root subscribers. */
 export type RootEvent =
   | { type: 'snapshot'; value: unknown }
   | { type: 'commit'; value: unknown };
 
 type Subscriber = (event: RootEvent) => void;
 
+/** The single owner of committed state at a workflow boundary. */
 export class Root<S = any> {
   private value: Focus<S, []>;
   readonly history: RootEvent[];
@@ -33,14 +25,13 @@ export class Root<S = any> {
     this.subscribers = [];
   }
 
-  /** Ruby Root[value] / Root.new に対応。 */
   static of<T>(value: T): Root<T>;
   static of(): Root<any>;
   static of(value: unknown = {}): Root<any> {
     return new Root(value);
   }
 
-  /** Ruby Root#| : ノードを実行し、Ok ならコミットする。 */
+  /** Execute a node and commit its state only when the result is Ok. */
   pipe(other: BerylxNode<S>): Result<S> {
     return this.call(other);
   }
@@ -50,7 +41,7 @@ export class Root<S = any> {
     return this.commitResult(result);
   }
 
-  /** 値をコミットする。Hash は現在の状態へ deep merge する。 */
+  /** Commit state. Raw non-array objects are deeply merged into the current state. */
   commit(value: unknown): this {
     const nextFocus = this.coerceCommit(value);
     this.value = nextFocus;
@@ -76,7 +67,7 @@ export class Root<S = any> {
     return new State<S>(this.value);
   }
 
-  /** Ruby Root#[] : Focus を子キーへ掘る。 */
+  /** Return a focus on a child key of the committed state. */
   at<K extends KeysAt<S, []>>(key: K): Focus<S, [K]> {
     return this.value.at(key);
   }

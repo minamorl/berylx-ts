@@ -1,15 +1,7 @@
-// ==================================================================
-// Merge — parallel の reducer 群。
-//
-// Ruby 版 Berylx::Merge の TS 移植。Focus 同士を畳む reducer を提供する。
-//   keepLeft / keepRight : 単純な左右採用。
-//   deep                 : 再帰的な deep merge (右優先)。
-//   strict               : base からの変更を突き合わせ、双方が別々に変えた
-//                          ら merge_conflict で衝突。
-//
-// reducer は (left, right) または (left, right, base) を受け取り Focus を返す。
-// arity は関数の length で判別する (Ruby の reducer.arity 相当)。
-// ==================================================================
+// Reducers combine Focus values. keepLeft/keepRight select one side; deep
+// recursively merges with right-side precedence; strict compares both sides
+// against a shared base and rejects incompatible changes with merge_conflict.
+// The interpreter uses function.length to distinguish two- and three-argument reducers.
 
 import { BerylxError } from './error.js';
 import { Focus } from './focus.js';
@@ -53,7 +45,7 @@ export const Merge = {
       Focus.of(
         strictMerge(asObject(left.toObject()), asObject(right.toObject()), asObject(base.toObject())),
       ) as Focus<S, []>;
-    // arity 3 を length で判別できるよう関数を返す (Ruby の reducer.arity == 3 相当)。
+    // Preserve function.length === 3 so the interpreter supplies the shared base.
     return reducer as Reducer<S>;
   },
 
@@ -193,7 +185,7 @@ function unionKeys(...objs: PlainObject[]): string[] {
   return ordered;
 }
 
-/** Ruby の値比較 (==) 相当。plain object/array を構造的に比較する。 */
+/** Compare arrays and object properties structurally. */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) {
     return true;

@@ -12,7 +12,7 @@ export type BranchPayload = [Branch, Focus];
 export type RescuePayload = [Rescue, Focus];
 export type RecoverPayload = [Rescue | Catch, Err];
 
-/** handler 応答を berylx の結果封筒へ narrow する。 */
+/** Validate and narrow a handler response to a berylx result. */
 export function decodeResult(value: unknown): Result {
   if (value instanceof Ok || value instanceof Err) {
     return value;

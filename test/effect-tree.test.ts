@@ -1,8 +1,3 @@
-// Ruby 版 test/effect_tree_test.rb の vitest 移植。
-// EffectTree (berylx workflow を darkcore Effect 木へ載せ替えた adapter) の検証。
-//   1. legacy 実行 (run) と EffectTree.run の結果一致 (dual-run 差分検証)。
-//   2. Task が不透明サンクでなく tagged effect ノードで表れること。
-//   3. handler 差し替えだけで dry-run (実行せず計画列挙) できること。
 import { describe, it, expect } from 'vitest';
 import {
   Ok,
@@ -17,7 +12,6 @@ import {
 } from '../src/index.js';
 import type { Result } from '../src/index.js';
 
-// --- テスト用 workflow 部品 --------------------------------------
 const strip = () => Task.of('strip', (lay) => lay.at('name').update((s) => (s as string).trim()));
 const greet = () => Task.of('greet', (lay) => lay.at('greeting').set(`hello ${lay.at('name').get()}`));
 const boom = () =>
@@ -33,7 +27,6 @@ const positiveArm = () =>
   );
 const elseArm = () => Else.then(Task.of('mark_negative', (lay) => lay.at('sign').set('negative')));
 
-// --- lay の突き合わせ (Focus は == を持たないので toObject 比較) ----
 function assertSameEnvelope(legacy: Result, effect: Result): void {
   expect(effect.constructor).toBe(legacy.constructor);
   if (legacy instanceof Ok) {

@@ -1,28 +1,6 @@
-// ==================================================================
-// Berylx EffectTree — berylx workflow を darkcore の単一 Effect 型
-// (Freer monad, tagged effect の木) へ載せ替える adapter。
-//
-// Ruby 版 Berylx::EffectTree (effect_tree.rb + combinators.rb + dry_run.rb)
-// の TS 移植。core (compile / build / run / handler マップ) をこのファイルに、
-// 合成子 real interpreter を combinators.ts に、dry-run aspect を dry-run.ts に
-// 分けて実装する (Ruby と同じファイル分割)。
-//
-// 掟 (spec-system pins) との対応:
-//   - substrate.effect_tree      : workflow を darkcore Effect 木へ写す。
-//   - substrate.task_as_effect   : Task を tagged effect ノード op(TASK,[task,focus]) で表す。
-//   - substrate.parallel.mapped  : parallel を op(PARALLEL,[node,focus]) へ写す。
-//       short_circuit / accumulate は handler ではなく payload の node.onErr で運ぶ。
-//   - substrate.branch.mapped    : branch を op(BRANCH,[node,focus]) へ写す。
-//   - substrate.rescue.mapped    : rescue を op(RESCUE,[node,focus]) へ写す。
-//   - result.parallel_default    : short_circuit が既定、accumulate はタグ上書き。
-//   - substrate.no_opaque_thunk  : payload は検査可能なデータ (berylx ノード + Focus)。
-//   - substrate.aspect_via_handler: retry/dry_run/audit は本体を書き換えず handler 差し替えで後付け。
-//   - result.envelope            : 成功 Ok(lay) / 失敗 Err(partial_lay, error)。
-//   - result.sequence_short_circuit: 最初の Err で短絡 (darkcore bind の上に載せる)。
-//
-// darkcore の bind は構造の接ぎ木のみ (演算ゼロ)。短絡判定 (Err かどうか) は
-// berylx の Result 圏の algebra なので、bind に埋めず継続の中で行う。
-// ==================================================================
+// Compile workflows into inspectable Effect trees. Handlers choose execution,
+// dry-run, or other aspects; continuations provide berylx result semantics.
+// Darkcore.bind only joins structure and does not interpret Ok/Err results.
 
 import * as Darkcore from '../darkcore.js';
 import { ResultOps, Ok, Err, type Result } from '../result.js';
@@ -45,7 +23,7 @@ import {
   type TaskPayload,
 } from './payload.js';
 
-/** berylx 合成子を darkcore Effect 木にディスパッチするためのタグ。 */
+/** Reserved tags for dispatching berylx nodes through the effect tree. */
 export const TASK = 'berylx_task';
 export const PARALLEL = 'berylx_parallel';
 export const BRANCH = 'berylx_branch';
@@ -60,20 +38,18 @@ export type AroundWrapper = (
   inner: Darkcore.HandlerMap[string],
 ) => unknown;
 
-/** dry_run の戻り値: 最終結果 (実行しないので常に Ok) と、列挙された計画。 */
+/** A dry-run result and its task-name plan; tasks are skipped, so the result is Ok. */
 export interface DryRun {
   result: Result;
   steps: string[];
 }
 
-/** darkcore Effect 木を組み立てる Kleisli 矢 (Focus → Effect)。 */
+/** A Kleisli arrow from Focus to an Effect tree. */
 type Arrow = (focus: Focus) => Darkcore.Effect<Result>;
 
 /**
- * compile — berylx ノードを「Focus を受け取り darkcore Effect を返す」
- * Kleisli 矢に落とす。Sequence は bind で接ぎ木し、Task / Parallel / Branch /
- * Rescue はそれぞれ 1 つの tagged effect ノードに落とす。payload は
- * [node, focus] の検査可能データ (不透明サンクにしない)。
+ * Compile sequences through bind and other nodes into tagged effects. Payloads
+ * retain inspectable [node, focus] data rather than opaque execution thunks.
  */
 function compile(node: BerylxNode): Arrow {
   if (node instanceof Sequence) {
@@ -101,10 +77,6 @@ function compile(node: BerylxNode): Arrow {
   );
 }
 
-/**
- * Sequence を darkcore bind で接ぎ木する。bind は構造の接ぎ木のみで、
- * 短絡 (Err) 判定・Catch 境界での回復は継続内 = berylx 圏の algebra site で行う。
- */
 function compileSequence(node: Sequence): Arrow {
   return (focus: Focus) =>
     node.steps.reduce<Darkcore.Effect<Result>>(
@@ -114,9 +86,8 @@ function compileSequence(node: Sequence): Arrow {
 }
 
 /**
- * Sequence の 1 ステップを次の Effect に接ぐ。Catch は Sequence の短絡境界:
- * 成功時は素通りし、直前が Err のときだけ (かつ catches が真のとき) 回復させる。
- * 非 Catch は Err なら短絡 (prev を前送り)、Ok なら実行する。
+ * Catch can recover a preceding Err when its predicate matches; ordinary steps
+ * propagate Err without running. Successful results pass through Catch unchanged.
  */
 function compileStep(step: BerylxNode, prev: Result): Darkcore.Effect<Result> {
   if (step instanceof Catch) {
@@ -135,18 +106,14 @@ function compileCatch(step: Catch, prev: Result): Darkcore.Effect<Result> {
   return Darkcore.op(RECOVER, [step, prev], decodeResult);
 }
 
-/**
- * berylx ノードと初期 focus から darkcore Effect 木を組み立てる。
- * 実行はしない (handler を渡すまで作用は起きない)。
- */
+/** Build an Effect tree without executing tasks or effects. */
 export function build(node: BerylxNode, focus: unknown): Darkcore.Effect<Result> {
   return compile(node)(ResultOps.coerceFocus(focus));
 }
 
 /**
- * workflow 本体 (Effect 木) を darkcore トランポリンで走らせる。handlers を
- * 差し替えるだけで圏 (real / dry_run / audit ...) を選ぶ。戻り値は berylx の
- * 結果封筒 Ok(lay) / Err(partial_lay, error)。
+ * Interpret a workflow with the supplied handlers, returning Ok(focus) or
+ * Err(partialFocus, error). Changing handlers selects execution or other aspects.
  */
 export function run(
   node: BerylxNode,
@@ -157,10 +124,8 @@ export function run(
 }
 
 /**
- * 実実行の handler マップ: Task の block を実際に呼び、合成子ノードはそれぞれ
- * 副木として実行しつつ berylx 圏の algebra で結果封筒を合成する。
- * 合成子 handler は自分自身 (realHandlers) を副木実行に渡すため、木は同じ圏
- * (real) のまま再帰する。
+ * Create execution handlers for tasks and combinators. Subtrees and recovery use
+ * the supplied subtree map, or this map itself, to preserve handler overrides.
  */
 export function realHandlers(
   effects: Darkcore.HandlerMap = {},
@@ -204,7 +169,7 @@ function realTask(payload: TaskPayload, handlers: Darkcore.HandlerMap): Result {
   return task.call(focus);
 }
 
-/** 全 handler を aspect で包み、包んだ map 自身を副木と回復へ伝播させる。 */
+/** Wrap all handlers and propagate the wrapped map to subtrees and recovery. */
 export function around(
   effects: Darkcore.HandlerMap = {},
   wrapper?: AroundWrapper,
@@ -221,16 +186,11 @@ export function around(
   return wrapped;
 }
 
-/**
- * 副木実行ヘルパ — berylx ノードを与えられた handler マップで走らせ、
- * berylx 結果封筒 (Ok/Err) を得る。合成子 handler が枝の実行に使う。
- */
+/** Interpret a subtree with the supplied handlers and return its berylx result. */
 export function runSubtree(node: BerylxNode, focus: Focus, handlers: Darkcore.HandlerMap): Result {
   return Darkcore.fold(build(node, focus), (x) => x, handlers);
 }
 
-// combinators / dry-run から使う内部関数を集約したオブジェクト。
-// (Ruby の module 再オープンに相当する分割を、循環 import を避けつつ実現する)
 import {
   runParallel,
   runBranch,
@@ -269,7 +229,6 @@ export const EffectTree = {
   recover,
   branchMatches,
   dryRun,
-  // フェーズ 3-a: 非同期実行系 (foldAsync ベース)。
   runAsync,
   runSubtreeAsync,
   asyncRealHandlers,

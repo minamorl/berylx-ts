@@ -1,21 +1,11 @@
-// ==================================================================
-// Result — 失敗に理由 (エラー値) を持たせる Either 系。Ok で継続 / Err で短絡。
-//
-// darkcore-ruby result.rb の TS 移植。
-//
-// 【名前空間の分離】(spec: beryl.namespace = separate_namespace)
-//   darkcore の Ok/Err は berylx の result.ts の Ok/Err とは【別物】。
-//   本 module は darkcore/ 配下に閉じ、外部へは `Darkcore.Ok` /
-//   `Darkcore.Err` (= `export * as Darkcore`) としてのみ露出する。berylx の
-//   トップレベル Ok/Err とは衝突しない。union 型は誤用を避けるため
-//   `DarkcoreResult` と名付ける。
-// ==================================================================
+// These Ok/Err types are exposed through Darkcore and are separate from the
+// top-level berylx workflow results. DarkcoreResult names their union explicitly.
 
 import { deriveFmap, deriveAp } from './monad.js';
 
 export type DarkcoreResult<A, E> = Ok<A> | Err<E>;
 
-/** 成功値を運び、継続する枝。 */
+/** A success value that continues through bind, fmap, and ap. */
 export class Ok<A> {
   readonly value: A;
 
@@ -59,7 +49,7 @@ export class Ok<A> {
   }
 }
 
-/** エラーを伝播し、以降の bind を素通り (短絡) する枝。 */
+/** An error that propagates without evaluating subsequent operations. */
 export class Err<E> {
   readonly error: E;
 
@@ -100,13 +90,12 @@ export class Err<E> {
   }
 }
 
-/** Ruby module Result 相当の smart constructor 群。 */
 export const Result = {
   pure: <A, E>(x: A): DarkcoreResult<A, E> => new Ok(x),
   ok: <A, E>(x: A): DarkcoreResult<A, E> => new Ok(x),
   err: <A, E>(e: E): DarkcoreResult<A, E> => new Err(e),
 
-  /** 例外を Result 化する典型ユーティリティ (例外は message を Err へ)。 */
+  /** Capture thrown values as Err, using the error message or string representation. */
   try_: <A>(block: () => A): DarkcoreResult<A, string> => {
     try {
       return new Ok(block());

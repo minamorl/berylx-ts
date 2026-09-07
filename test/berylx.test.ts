@@ -1,10 +1,3 @@
-// Ruby 版 test/berylx_test.rb の vitest 移植。
-// 各テストは Ruby のケースと 1:1 対応し、演算子は TS API へ写す:
-//   root | wf   → root.pipe(wf)
-//   a >> b      → a.then(b)
-//   a & b       → a.par(b)
-//   state | t   → state.pipe(t)
-//   When | Else → when.then(...).or(Else.then(...))
 import { describe, it, expect } from 'vitest';
 import {
   ResultOps,
@@ -31,7 +24,7 @@ const toObj = (r: { focus: Focus }) => r.focus.toObject();
 describe('Berylx', () => {
   it('test_result_map', () => {
     const result = ResultOps.map(ResultOps.ok(10), (n) => (n.get() as number) + 1);
-    // Ok(10) === ResultOps.ok(10) は Ruby の Data value 等価。TS では focus の値で確認。
+    // Ruby uses Data value equality; compare the underlying focus value here.
     expect((ResultOps.ok(10).focus.get() as number)).toBe(10);
     expect(result).toBeInstanceOf(Ok);
     expect((result as Ok).focus.get()).toBe(11);
@@ -57,8 +50,7 @@ describe('Berylx', () => {
     const state = State.of({ name: '  mina  ' });
     const strip = task('strip', (lay) => lay.at('name').update((s) => (s as string).trim()));
     const greet = task('greet', (lay) => lay.at('greeting').set(`hello ${lay.at('name').get()}`));
-    // Ruby state | strip | greet は (state|strip) が Result を返し、その Ok#| が続く。
-    // TS では state.pipe(strip) が Result を返し、Ok#pipe(greet) で継続する。
+    // State.pipe returns a Result; the next step is chained through Ok.pipe.
     const result = state.pipe(strip).pipe(greet);
     expect(result).toBeInstanceOf(Ok);
     expect(toObj(result)).toEqual({ name: 'mina', greeting: 'hello mina' });

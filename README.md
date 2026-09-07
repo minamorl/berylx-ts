@@ -1,248 +1,329 @@
-# Berylx (TypeScript)
+# Berylx for TypeScript
 
-**Graphable TypeScript workflows over focused, recoverable state.**
+**Composable, inspectable workflows with immutable state and recoverable failures.**
 
-Ruby gem [`berylx`](https://github.com/minamorl/berylx) の TypeScript 移植。
-多段のビジネス workflow に、TS を DSL 化せずに小さな代数 (algebra) を与える:
+Berylx is a TypeScript port of the Ruby [berylx](https://github.com/minamorl/berylx)
+gem. It gives multistep workflows a small set of building blocks: named tasks,
+sequences, branches, parallel composition, and recovery handlers.
 
+Each task receives a `Focus` (also called `Lay`) and produces a result:
+
+```text
+Task: Focus<State> -> Ok<State> | Err<State>
 ```
-Task : Lay -> Result[Lay]
-```
 
-一つの `Root` がコミット済み状態を所有する。名前つき `Task` はその状態を
-`Lay` (= 焦点つき不変状態 `Focus`) を通して観測し、不変に変換する。各ステップは
-`Ok(lay)` か `Err(partialLay, error)` を返すので、失敗しても診断・補償に足る
-文脈が残る。
+Successful results carry the updated state. Failed results carry partial state
+and a structured error, so recovery code can work with the context of the failure.
+A `Root` owns committed state and commits a workflow's result only when it succeeds.
 
-## なぜ Berylx か
+Use Berylx to compose workflows within a process. Persistence, job scheduling, and
+distributed coordination belong to the application running the workflow.
 
-- **境界は一つ** — `Root` が workflow 1 回分のコミット済み状態を所有する。
-- **焦点つき不変更新** — `Lay` は共有変更なしにネスト値を読み替える。
-- **失敗が状態を保つ** — 補償処理は「失われたローカル変数の列」ではなく
-  部分 `Lay` を受け取る。
-- **合成は小さいまま** — sequence / branch / parallel / merge / rescue を
-  メソッドと値だけで組む。
-- **workflow は検査可能** — 名前つき task はグラフオブジェクトと DOT 出力へ
-  コンパイルできる。
+## Installation
 
-Berylx はインプロセスの workflow 合成であり、ジョブキューでも永続スケジューラでも
-分散 saga コーディネータでもない。
-
-## Install
+Install the published package from npm:
 
 ```bash
-pnpm add @minamorl/berylx   # (publish 後)
+pnpm add @minamorl/berylx
 ```
 
-```ts
-import { Root, Task, task } from '@minamorl/berylx';
-```
+The latest published release is `0.2.0`. This README describes the current `0.3.0`
+source, which includes unreleased changes. To use the APIs shown here, follow the
+[source setup](#development).
 
-Ruby 版の演算子 (`>>` `&` `|`) は TS ではメソッドへ写している:
+The package uses ES modules, includes TypeScript declarations, and requires Node.js
+18 or later.
 
-| Ruby            | TypeScript             | 意味                     |
-| --------------- | ---------------------- | ------------------------ |
-| `a >> b`        | `a.then(b)`            | 逐次合成 (Sequence)      |
-| `a & b`         | `a.par(b)`             | 並列合成 (Parallel)      |
-| `root \| wf`    | `root.pipe(wf)`        | 実行してコミット         |
-| `state \| t`    | `state.pipe(t)`        | State 空間で実行         |
-| `state & t`     | `state.and(t)`         | State にノードを蓄積     |
-| `When[:x] { }`  | `When.of('x', () => …)`| 分岐の述語               |
-| `arm \| Else`   | `arm.or(Else.then(…))` | arm の連結               |
+## Quick start
 
-## 型付きの状態
-
-`Focus` は状態のルート型 `S` と、いま見ている path `P` を型に載せる。既定は
-`S = any` なので、型を付けない書き方はこれまでどおり通る。
+Declare the state type once with `berylx<S>()`, then build tasks using that type:
 
 ```ts
 import { berylx } from '@minamorl/berylx';
 
-interface Order {
-  user: { name: string; age: number };
-  total: number;
-  status: 'paid' | 'trial' | null;
+interface GreetingState {
+  name: string;
+  greeting: string;
 }
 
-const b = berylx<Order>();   // 境界ごとに 1 回だけ状態型を宣言する
+const b = berylx<GreetingState>();
 
-const strip = b.task('strip', (f) => f.at('user').at('name').update((s) => s.trim()));
-//                                 ^ f: Focus<Order>、s: string と推論される
-
-b.task('typo', (f) => f.at('user').at('nmae'));
-//                                  ~~~~~~
-//  Argument of type '"nmae"' is not assignable to parameter of type '"name" | "age"'
-```
-
-`berylx<S>()` は薄いラッパで、`Task.of<S>(...)` / `Flow.of(...)` を直接書くのと
-実行時は等価。型引数を毎回書かずに済ませるためだけにある。
-
-### なぜ `Task<A, B>` にしないのか
-
-状態遷移を `Task<A, B>` として型付けると、`then` の合成で型の幅寄せが要り、
-`set` が状態の型を広げるための再帰的な object 再構築 (`SetAt<S, P, V>`) を
-呼び込む。エラーメッセージが読めなくなり、ライブラリ全体が型の体操に侵食される。
-
-berylx は境界ごとに Root が 1 つなので、状態型 `S` は workflow ごとに固定できる。
-合成子を `S` について単相にすると `set` が型を変えないので、型レベルの計算は
-path の読み出し (`PathAt<S, P>`) 一本で済む。動的なキーを掘りたい場合は
-`Focus<any>` を使えば従来どおり。
-
-## 並列の merge algebra
-
-`a.par(b)` は全 branch を**同じ base snapshot から**走らせ、返ってきた Focus を
-reducer で畳む。base があるので、これは binary な two-way merge ではなく
-base `b` を持つ three-way join `μ_b(left, right)` である。既定 reducer の
-`Merge.strict()` は次の法則を満たす:
-
-| 法則 | 意味 |
-| ---- | ---- |
-| `μ_b(b, x) = x` | 何もしない左 branch は右の結果を消さない |
-| `μ_b(x, b) = x` | 何もしない右 branch は左の結果を消さない |
-| `Δ(l,b) ∩ Δ(r,b) = ∅ ⇒ 両方を保存` | 別々の path への更新は両方残る |
-| 同一 path の非互換更新 | `Err(merge_conflict)` |
-
-```ts
-const setA = Task.of('setA', (f) => f.at('a').set(1));
-const setB = Task.of('setB', (f) => f.at('b').set(1));
-
-Flow.of(Lay.of({ a: 0, b: 0 })).call(setA.par(setB));
-// => Ok({ a: 1, b: 1 })   両方の更新が残る
-
-const paid  = Task.of('paid',  (f) => f.at('status').set('paid'));
-const trial = Task.of('trial', (f) => f.at('status').set('trial'));
-
-Flow.of(Lay.of({ status: null })).call(paid.par(trial));
-// => Err({ status: null }, merge_conflict at status)
-```
-
-`Merge.deep()` は base を見ない right-biased な two-way merge なので、この
-法則を**満たさない** (既存キーへの disjoint update と右単位律を落とす)。
-right wins を明示的に欲しいときだけ `.reduce(Merge.deep())` で選ぶこと。
-
-## 実行基盤
-
-上の表層 API があなたの書くすべて。その下では、あらゆる workflow が単一の
-substrate — [darkcore](https://github.com/minamorl/darkcore-ruby) の Effect 木
-(Freer monad) — の上で走る。`Task` / sequence / parallel / branch / rescue は
-1 種類のタグ付き effect にコンパイルされ、`EffectTree` が darkcore の
-トランポリンで解釈する。ネイティブの第二実行系は存在しない。
-
-darkcore の TS パッケージがまだ無いため、この基盤は `src/darkcore.ts` として
-リポジトリ内に同梱している。
-
-実行は「handler マップで解釈される effect 木」でしかないので、横断的関心事
-(retry / dry-run / audit) は **handler マップを差し替える**だけで足せる。
-workflow 本体は書き換えない。
-
-## Quick start
-
-```ts
-import { Root, Task } from '@minamorl/berylx';
-
-const stripName = Task.of('strip_name', (lay) =>
-  lay.at('name').update((s) => (s as string).trim()),
+const stripName = b.task('strip_name', (focus) =>
+  focus.at('name').update((name) => name.trim()),
 );
 
-const greet = Task.of('greet', (lay) =>
-  lay.at('greeting').set(`hello ${lay.at('name').get()}`),
+const greet = b.task('greet', (focus) =>
+  focus.at('greeting').set(`Hello, ${focus.at('name').get()}!`),
 );
 
 const workflow = stripName.then(greet);
-const root = Root.of({ name: '  mina  ' });
+const root = b.root({ name: '  Mina  ', greeting: '' });
 const result = root.pipe(workflow);
 
 result.focus.toObject();
-// => { name: 'mina', greeting: 'hello mina' }
+// { name: 'Mina', greeting: 'Hello, Mina!' }
 
 root.state();
-// => { name: 'mina', greeting: 'hello mina' }
+// { name: 'Mina', greeting: 'Hello, Mina!' }
 ```
 
-シーケンス全体が `root.pipe(workflow)` として走ったので、コミットは一度だけ。
-どれかのステップが `Err` を返したら、Root は最後にコミットした状態に留まり、
-結果は部分 `Lay` を保持する。
+`then` passes each successful result to the next task. Running the entire sequence
+through `root.pipe(workflow)` commits once, after the sequence succeeds. If it
+returns `Err`, the root keeps its previously committed state and the result retains
+the partial state.
 
-## 失敗と回復
+## Working with state
+
+`Focus<S, P>` tracks both the root state type `S` and the current path `P`.
+`at(key)` moves to a child, `get()` reads the focused value, and `set()` or
+`update()` returns a new focus at the root. The original focus remains unchanged.
 
 ```ts
-import { Root, Task, Catch } from '@minamorl/berylx';
+import { Focus } from '@minamorl/berylx';
 
-const charge = Task.of('charge', (lay) =>
-  lay.at('charged').set(true).reject('payment_failed', 'card declined'),
-);
+const original = Focus.of({ user: { name: '  Mina  ', age: 21 } });
+const updated = original.at('user').at('name').update((name) => name.trim());
 
-const notify = Task.of('notify', (lay) => lay.at('notified').set(true));
+original.at('user').at('name').get(); // '  Mina  '
+updated.at('user').at('name').get();  // 'Mina'
+updated.toObject();                 // { user: { name: 'Mina', age: 21 } }
 
-const workflow = charge
-  .then(Catch.of('record_failure', null, {}, (error, lay) =>
-    lay.at('failure').set((error as Error).message),
-  ))
-  .then(notify);
-
-const root = Root.of({ charged: false });
-const result = root.pipe(workflow);
-
-result.focus.toObject();
-// => { charged: true, failure: 'card declined', notified: true }
+// @ts-expect-error Only 'name' and 'age' are valid keys here.
+original.at('user').at('nmae');
 ```
 
-`Catch` が無ければ、結果は部分 lay に `charged: true` を持つ `Err` となり、
-`root.state()` は `{ charged: false }` のまま残る。
+Plain objects and arrays are defensively copied and deeply frozen. Values such as
+`Map`, `Set`, `Date`, typed arrays, and class instances are retained as supplied;
+their internals are not frozen by `Focus`.
 
-## dry-run (計画の列挙)
+A workflow keeps one state type throughout composition. `set()` must accept the
+type at its path; it does not widen the state type. Include fields that later
+steps populate in your state interface. This keeps composition and error messages
+manageable without modeling every step as a separate `Task<Input, Output>` type.
+
+`berylx<S>()` is a convenience wrapper around constructors such as `Task.of<S>()`,
+`Root.of()`, and `Flow.of()`. It returns the same classes and adds no separate
+execution mechanism. For dynamic state, unparameterized `Task.of()` and
+`Focus<any>` remain available. `Lay` is an alias for `Focus`.
+
+## Composing workflows
+
+| Operation | API | Behavior |
+| --- | --- | --- |
+| Sequence | `a.then(b)` | Run `b` with the successful result of `a`. |
+| Parallel composition | `a.par(b)` | Run both branches from the same snapshot and merge their results. |
+| Conditional branch | `When.of(name, predicate).then(task)` | Run an arm when its predicate matches. |
+| Additional arm | `arm.or(otherArm)` | Try arms in order; the first match wins. |
+| Fallback arm | `arm.or(Else.then(task))` | Supply a final unconditional arm. |
+| Recovery boundary | `workflow.then(Catch.of(...))` | Recover an earlier failure and allow the sequence to continue. |
+| Recovery wrapper | `workflow.rescueWith(handler)` | Run a handler if the wrapped workflow fails. |
+| Execute and commit | `root.pipe(workflow)` | Commit only a successful result. |
+| Execute without a root | `Flow.of(state).call(workflow)` | Return a result without committing to a root. |
+
+Ordinary `Task` execution is synchronous, including the branches of `par`.
+For concurrent asynchronous branches, use `AsyncTask` and
+`EffectTree.runAsync`, as described below.
+
+## Parallel merges
+
+Every parallel branch starts from the same base snapshot. The default reducer,
+`Merge.strict()`, compares each result with that base before combining changes:
+
+- A branch that leaves the state unchanged does not erase another branch's work.
+- Changes to different paths are preserved.
+- Matching updates to the same path are accepted.
+- Incompatible updates to the same path return an `Err` with code `merge_conflict`.
+
+```ts
+import { Flow, Task } from '@minamorl/berylx';
+
+const setA = Task.of('set_a', (focus) => focus.at('a').set(1));
+const setB = Task.of('set_b', (focus) => focus.at('b').set(1));
+
+const merged = Flow.of({ a: 0, b: 0 }).call(setA.par(setB));
+merged.focus.toObject(); // { a: 1, b: 1 }
+
+const paid = Task.of('paid', (focus) => focus.at('status').set('paid'));
+const trial = Task.of('trial', (focus) => focus.at('status').set('trial'));
+
+const conflict = Flow.of({ status: null }).call(paid.par(trial));
+if (conflict.isErr()) {
+  conflict.code;             // 'merge_conflict'
+  conflict.focus.toObject(); // { status: null }
+}
+```
+
+This is a three-way join `μ_b(left, right)` over base `b`, with both identity laws
+`μ_b(b, x) = x` and `μ_b(x, b) = x`.
+
+`Merge.deep()` is a two-way merge that favors the right-hand value and ignores the
+base. It can overwrite independent updates to existing keys. Choose it explicitly
+when that behavior is intended:
+
+```ts
+import { Merge, Parallel } from '@minamorl/berylx';
+
+const rightBiased = new Parallel([setA, setB]).reduce(Merge.deep());
+```
+
+`Parallel` defaults to `short_circuit` error handling. Use `.accumulate()` on a
+`Parallel` instance to collect branch failures in `parallelErrors`.
+
+## Failures and recovery
+
+Return `focus.reject(code, message)` to fail with partial state. Task exceptions
+are also converted to `Err` results. A `BerylxError` records information such as
+the error code, failed task, trace, cause, and parallel failures.
+
+```ts
+import { Catch, Root, Task } from '@minamorl/berylx';
+
+const charge = Task.of('charge', (focus) =>
+  focus.at('chargeAttempted').set(true).reject('payment_failed', 'Card declined'),
+);
+
+const recordFailure = Catch.of('record_failure', null, {}, (error, focus) =>
+  focus.at('failure').set(error instanceof Error ? error.message : String(error)),
+);
+
+const notify = Task.of('notify', (focus) => focus.at('notified').set(true));
+const workflow = charge.then(recordFailure).then(notify);
+const root = Root.of({ chargeAttempted: false });
+
+const result = root.pipe(workflow);
+result.focus.toObject();
+// { chargeAttempted: true, failure: 'Card declined', notified: true }
+```
+
+Without `recordFailure`, the sequence returns an `Err` containing
+`{ chargeAttempted: true }`, skips `notify`, and leaves `root.state()` at
+`{ chargeAttempted: false }`.
+
+`Catch` passes successful results through and runs its handler only for a matching
+failure. Fatal errors are excluded by default; `{ fatal: true }` opts into
+recovering them. Committing or rejecting state does not undo external side effects;
+any compensation belongs in your recovery logic.
+
+## Asynchronous tasks
+
+Use `AsyncTask.of()` for callbacks that return promises, and run workflows that
+contain them with `EffectTree.runAsync()`:
+
+```ts
+import { AsyncTask, EffectTree } from '@minamorl/berylx';
+
+const loadName = AsyncTask.of('load_name', async (focus) => {
+  const name = await Promise.resolve('Mina');
+  return focus.at('name').set(name);
+});
+
+const loadTotal = AsyncTask.of('load_total', async (focus) => {
+  const total = await Promise.resolve(42);
+  return focus.at('total').set(total);
+});
+
+const result = await EffectTree.runAsync(loadName.par(loadTotal), {
+  name: '',
+  total: 0,
+});
+
+result.focus.toObject(); // { name: 'Mina', total: 42 }
+```
+
+Synchronous and asynchronous tasks can share a workflow. The asynchronous
+interpreter starts parallel branches together and waits for them all to settle
+before combining results. `EffectTree.runAsync()` returns a result; it does not
+commit to a `Root` automatically.
+
+## Dry runs and graphs
+
+Using the `workflow` from the quick start, list task names without running task
+callbacks:
 
 ```ts
 import { EffectTree } from '@minamorl/berylx';
 
-const dry = EffectTree.dryRun(stripName.then(greet), { name: '  mina  ' });
-dry.steps; // => ['strip_name', 'greet']  (Task の block は実行されない)
+const dry = EffectTree.dryRun(workflow, { name: '  Mina  ', greeting: '' });
+dry.steps; // ['strip_name', 'greet']
 ```
 
-同じ effect 木を、handler マップの差し替えだけで real 実行 / dry-run へ
-切り替えられる。
+Dry runs evaluate branch predicates against the supplied state, so predicates
+should be pure. Task updates are not simulated, and recovery handlers are not
+invoked by a simulated failure.
 
-## グラフ化
+Compile a workflow into an inspectable graph or export it as DOT or Mermaid:
 
 ```ts
-const graph = stripName.then(greet).compile();
-graph.nodes();  // => ['strip_name', 'greet']
-graph.toDot();  // => 'digraph "berylx" { ... }'
+import { Graph } from '@minamorl/berylx';
+
+const graph = Graph.from(workflow);
+graph.nodes();     // ['strip_name', 'greet']
+graph.toDot();     // A Graphviz digraph.
+graph.toMermaid(); // A Mermaid flowchart.
 ```
 
-## API 一覧
+## Execution model
 
-- 状態: `Focus` (別名 `Lay`) / `Root` / `State` / `Flow`
-- 合成子: `Task` / `AsyncTask` / `Sequence` / `Parallel` / `When` / `Else` /
-  `Branch` / `Catch` / `Rescue` / `Workflow`
-- 結果: `Ok` / `Err` / `ResultOps` / `BerylxError`
-- reducer: `Merge` (`strict` — 既定 / `deep` / `keepLeft` / `keepRight`)
-- 基盤: `EffectTree` (同期 `run` / 非同期 `runAsync`) / `Darkcore`
-- グラフ: `Graph#toDot()` / `Graph#toMermaid()`
-- cray 互換ブリッジ: `attachRoot` / `fromCrayResult` / `toCrayResult` /
-  `Cray` / `CraySuccess` / `CrayFailure`
-- ヘルパ: `run(workflow, focus)` / `task(name, block)`
+The workflow interpreter uses the bundled TypeScript port of
+[darkcore](https://github.com/minamorl/darkcore-ruby). Tasks and combinators compile
+into tagged effects, which `EffectTree` interprets through a handler map. The
+runtime lives in `src/darkcore/` and is re-exported through `src/darkcore.ts`.
 
-`Darkcore` 名前空間は substrate の Effect (`Effect` / `pure` / `op` / `fold` /
-`run` / `foldAsync`) に加え、darkcore の全圏を提供する: `Maybe` (`Just` /
-`Nothing`) / `Either` (`Left` / `Right`) / `Result` (`Ok` / `Err` — berylx の
-`Ok`/`Err` とは別物) / `State` / `Validation` (`Success` / `Failure`) /
-`IOEffects` + `VirtualWorld` (real / virtual 両圏)。
+Handler maps let you add execution policies such as auditing or retry logic
+without changing workflow definitions. Dry runs use the same effect structure
+with different handlers.
 
-## 開発
+## API overview
+
+| Area | Exports |
+| --- | --- |
+| State | `Focus`, `Lay`, `Root`, `State`, `Flow`, `berylx` |
+| Composition | `Task`, `AsyncTask`, `Sequence`, `Parallel`, `When`, `Else`, `Branch`, `Catch`, `Rescue`, `Workflow` |
+| Results | `Ok`, `Err`, `ResultOps`, `BerylxError` |
+| Merge reducers | `Merge.strict`, `Merge.deep`, `Merge.keepLeft`, `Merge.keepRight` |
+| Execution | `EffectTree`, `Perform`, `Darkcore` |
+| Graphs | `Graph`, `Graph.toDot()`, `Graph.toMermaid()` |
+| Compatibility | `attachRoot`, `fromCrayResult`, `toCrayResult`, `Cray`, `CraySuccess`, `CrayFailure` |
+| Helpers | `run(workflow, focus)`, `task(name, block)` |
+
+`Darkcore` also exports `Maybe`, `Either`, `Result`, `State`, `Validation`, and
+`IOEffects` with `VirtualWorld`. Its `Ok` and `Err` types are separate from
+Berylx's workflow result types.
+
+## Coming from Ruby or cray
+
+Ruby operators map to methods in TypeScript:
+
+| Ruby | TypeScript | Purpose |
+| --- | --- | --- |
+| `a >> b` | `a.then(b)` | Sequence |
+| `a & b` | `a.par(b)` | Parallel composition |
+| `root \| workflow` | `root.pipe(workflow)` | Execute and commit |
+| `state \| task` | `state.pipe(task)` | Execute in state space |
+| `state & task` | `state.and(task)` | Accumulate a node in a new `State` |
+| `When[:name] { ... }` | `When.of('name', predicate)` | Define a condition |
+| `arm \| Else` | `arm.or(Else.then(task))` | Add a fallback arm |
+
+See [MIGRATION.md](./MIGRATION.md) for the migration plan from the
+`@minamorl/cray` and `@minamorl/lay` packages in `root-paradigm`, including
+differences in state updates, asynchronous execution, and errors.
+
+## Development
 
 ```bash
+git clone https://github.com/minamorl/berylx-ts.git
+cd berylx-ts
 pnpm install
-pnpm run typecheck   # tsc --noEmit
-pnpm run build       # tsc -> dist/
-pnpm test            # vitest run (53 tests)
+pnpm run typecheck
+pnpm run build
+pnpm test
 ```
 
-## Ruby 版からの移行 / cray-root-lay 廃止
-
-root-paradigm の `@minamorl/cray` + `@minamorl/lay` ("root + lay" 系ワークフロー
-基盤) を berylx-ts へ寄せて廃止する計画は [`MIGRATION.md`](./MIGRATION.md) を参照。
+The build writes JavaScript and declarations to `dist/`. `pnpm test` runs Vitest
+and the positive and negative TypeScript checks in `scripts/check-types.mjs`.
+Use `pnpm run test:watch` for Vitest watch mode or `pnpm run check:types` to run
+only the type checks.
 
 ## License
 
-MIT.
+[MIT](./LICENSE).

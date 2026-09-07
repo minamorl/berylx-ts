@@ -1,17 +1,3 @@
-// ==================================================================
-// Berylx EffectTree (dry-run aspect) — dry-run interpreter。
-//
-// Ruby 版 dry_run.rb の TS 移植。real interpreter (index.ts) と同じ Effect 木を
-// 共有し、handler マップだけを差し替えることで「実行せず計画 (Task 名の列) を
-// 列挙する」圏を選ぶ。
-//
-// 掟 (spec-system pins) との対応:
-//   - substrate.aspect_via_handler: workflow 本体 (Effect 木) を書き換えず
-//       handler 差し替えだけで dry-run aspect を後付けする。
-//   - substrate.no_opaque_thunk  : Task の block / branch predicate 以外の副作用は
-//       発火させない (計画列挙は副作用ゼロ)。
-// ==================================================================
-
 import * as Darkcore from '../darkcore.js';
 import { ResultOps } from '../result.js';
 import { Focus } from '../focus.js';
@@ -30,8 +16,8 @@ import {
 } from './payload.js';
 
 /**
- * dry-run: Task を実行せず計画 (Task 名の列) を列挙する。常に Ok(focus) を返す
- * ため短絡せず全ステップを辿る。合成子も副作用ゼロで step のみ列挙。
+ * List task names without executing task bodies. Each step returns Ok(focus), so
+ * no task failure short-circuits the plan. Branch predicates are still evaluated.
  */
 export function dryRun(node: BerylxNode, focus: unknown): DryRun {
   const steps: string[] = [];
@@ -39,11 +25,7 @@ export function dryRun(node: BerylxNode, focus: unknown): DryRun {
   return { result, steps };
 }
 
-/**
- * steps を共有した dry handler マップ。合成子 dry handler は副木の実行に同じ
- * steps を共有する dryHandlers(steps) を使うので、再帰しても計画は 1 本の steps
- * に積み上がる (aspect は handler 差し替えだけで切り替わる)。
- */
+/** Share one steps array across all handlers, including nested subtrees. */
 function dryHandlers(steps: string[]): Darkcore.HandlerMap {
   return {
     [TASK]: (payload) => dryTask(decodeTaskPayload(payload), steps),
@@ -65,14 +47,12 @@ function dryHandlers(steps: string[]): Darkcore.HandlerMap {
 function dryTask(payload: TaskPayload, steps: string[]) {
   const [task, focus] = payload;
   steps.push(task.name);
-  return ResultOps.ok(focus); // Task の block は呼ばない (副作用ゼロ)。
+  return ResultOps.ok(focus);
 }
 
 /**
- * dry-run 用の合成子: 副作用ゼロで step のみ列挙する。
- *   parallel — 全 branch を列挙 (順序は branch 順で決定的にするため逐次)。
- *   branch   — predicate を評価し match した arm のみ列挙。
- *   rescue   — body のみ列挙 (dry では body は必ず Ok なので handler は発火しない)。
+ * Visit parallel branches in declaration order. Conditional branches visit only
+ * the matching arm; rescue visits only its body because dry runs produce Ok.
  */
 function dryParallel(node: Parallel, focus: Focus, steps: string[]) {
   node.branches.forEach((branch) => runSubtree(branch, focus, dryHandlers(steps)));

@@ -1,8 +1,3 @@
-// darkcore フル移植の vitest 検証。
-//   - Maybe / Either / Result / State / Validation の短絡・累積・導出。
-//   - Monad 則 (left identity / right identity / associativity) を代表型で。
-//   - IOEffects + VirtualWorld: 同一 program を real 圏 (実 FS) / virtual 圏
-//     (インメモリ) の両方で走らせる dual-run 検証。
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -130,7 +125,6 @@ describe('Darkcore.Validation', () => {
     expect((okBind as InstanceType<typeof Success>).value).toBe(4);
     expect(Validation.failure('e1').bind(() => Validation.success(1))).toBeInstanceOf(Failure);
 
-    // ap: 二つの Failure を連結して累積する。
     const acc = Validation.failure('e1').ap(Validation.failure('e2'));
     expect(acc).toBeInstanceOf(Failure);
     expect([...(acc as InstanceType<typeof Failure>).errors]).toEqual(['e1', 'e2']);
@@ -139,7 +133,6 @@ describe('Darkcore.Validation', () => {
   it('success.ap applies the wrapped function', () => {
     const applied = Validation.success((x: number) => x * 2).ap(Validation.success(21));
     expect((applied as InstanceType<typeof Success>).value).toBe(42);
-    // Success.ap(Failure) は相手のエラーを採用する。
     expect(Validation.success((x: number) => x).ap(Validation.failure('bad'))).toBeInstanceOf(Failure);
   });
 
@@ -149,7 +142,6 @@ describe('Darkcore.Validation', () => {
   });
 });
 
-// --- Monad 則 (代表型で bind/pure の圏法則を確認) -------------------
 describe('Monad laws', () => {
   const f = (x: number) => Maybe.just(x + 1);
   const g = (x: number) => Maybe.just(x * 2);
@@ -184,9 +176,8 @@ describe('Monad laws', () => {
   });
 });
 
-// --- IOEffects + VirtualWorld dual-run -----------------------------
 describe('Darkcore.IOEffects dual-run (real vs virtual)', () => {
-  // 同一 program: ファイルに書き込み、追記し、読み戻す。
+  // The same program writes, appends, and reads in both interpreters.
   const buildProgram = (p: string) =>
     IOEffects.write(p, 'hello')
       .seq(IOEffects.append(p, ' world'))
@@ -208,7 +199,7 @@ describe('Darkcore.IOEffects dual-run (real vs virtual)', () => {
       const prog = buildProgram(file);
       const out = fold(prog, (x) => x, realHandlers());
       expect(out).toBe('hello world');
-      // dual-run: 圏V と圏R で同一 program が同一結果を返す。
+      // The virtual and real interpreters must produce the same result.
       const world = new VirtualWorld();
       const vout = fold(buildProgram(file), (x) => x, world.handlers());
       expect(vout).toBe(out);

@@ -1,11 +1,5 @@
-// ==================================================================
-// Node 組み込み API の最小 ambient 宣言。
-//
-// IOEffects.realHandlers (圏R = 本物の OS) が使う node:fs / node:child_process /
-// process / Buffer / console を、@types/node を新規導入せずに型付けするための
-// 局所シム。実行時は Node が本物を供給する。ここでは realHandlers が触る範囲
-// だけを宣言する (最小侵襲)。
-// ==================================================================
+// Minimal declarations for the Node APIs used by IOEffects.realHandlers.
+// Node supplies the implementations; these local shims avoid adding @types/node.
 
 declare module 'node:fs' {
   export function readSync(

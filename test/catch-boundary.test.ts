@@ -1,6 +1,3 @@
-// Ruby 版 test/catch_boundary_test.rb の vitest 移植。
-// fatal (terminal) エラーを Catch がデフォルトでは回復せず、fatal:true を
-// 明示したときのみ回復することを確認する。
 import { describe, it, expect } from 'vitest';
 import { ResultOps, Ok, Err, Focus, Lay, Flow, Task, Catch } from '../src/index.js';
 

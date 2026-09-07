@@ -1,16 +1,11 @@
-// ==================================================================
-// Validation — Result と違い「短絡せずエラーを集める」Applicative。
-//
-// darkcore-ruby validation.rb の TS 移植。fmap は Monad から導出するが、ap は
-// 【あえて上書き】する。エラー累積の ap は bind から導出できない (bind は必ず
-// 短絡する) ため。errors は Semigroup 結合 (配列連結) で貯める。bind は短絡。
-// ==================================================================
+// Validation derives fmap from bind, but implements ap separately to accumulate
+// errors by array concatenation. bind still short-circuits on failure.
 
 import { deriveFmap } from './monad.js';
 
 export type Validation<A, E> = Success<A> | Failure<E>;
 
-/** 成功値を運ぶ枝。ap は相手が Failure ならそのエラーを採用する。 */
+/** A success value; ap propagates errors from a Failure argument. */
 export class Success<A> {
   readonly value: A;
 
@@ -34,10 +29,7 @@ export class Success<A> {
     return this.fmap(f);
   }
 
-  /**
-   * self は「関数を包んだ Success」。other が Success なら関数適用、Failure なら
-   * 相手のエラーを採用する (エラーは短絡せず相手から引き継ぐ)。
-   */
+  /** Apply the wrapped function to a Success, or propagate a Failure unchanged. */
   ap<B, E>(other: Validation<unknown, E>): Validation<B, E> {
     if (other instanceof Success) {
       return other.fmap((x) => (this.value as (a: unknown) => B)(x));
@@ -58,7 +50,7 @@ export class Success<A> {
   }
 }
 
-/** エラーを貯める枝。bind/fmap は短絡し、ap は Semigroup でエラーを累積する。 */
+/** bind/fmap short-circuit; ap accumulates errors by concatenation. */
 export class Failure<E> {
   readonly errors: readonly E[];
 
@@ -82,7 +74,7 @@ export class Failure<E> {
     return this;
   }
 
-  /** Success なら自分のエラーを保つ、Failure なら両者のエラーを連結 (累積)。 */
+  /** Keep these errors for a Success, or concatenate both sets for a Failure. */
   ap<B>(other: Validation<unknown, E>): Validation<B, E> {
     if (other instanceof Failure) {
       return new Failure<E>([...this.errors, ...other.errors]);
@@ -103,7 +95,7 @@ export class Failure<E> {
   }
 }
 
-/** Ruby module Validation 相当。failure(*es) は引数を flatten して貯める。 */
+/** Validation constructors; failure flattens its arguments by one array level. */
 export const Validation = {
   pure: <A, E>(x: A): Validation<A, E> => new Success(x),
   success: <A, E>(x: A): Validation<A, E> => new Success(x),

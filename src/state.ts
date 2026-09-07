@@ -1,12 +1,3 @@
-// ==================================================================
-// State — lay を「タスク実行空間」へ持ち上げた層。
-//
-// Ruby 版 Berylx::State の TS 移植。Ruby の演算子は次へ写す:
-//   State#| (実行)     → pipe
-//   State#& (合成蓄積) → and
-// pipe は与えられたノードを即実行し、and はノードを蓄積して新しい State を返す。
-// ==================================================================
-
 import { ResultOps, type Result } from './result.js';
 import { Focus } from './focus.js';
 import type { BerylxNode } from './node.js';
@@ -15,7 +6,6 @@ import { Flow } from './flow.js';
 import { EffectTree } from './effect-tree/index.js';
 import type { HandlerMap } from './darkcore.js';
 
-/** call を持つ berylx ノード。 */
 type Nodeish<S = any> = BerylxNode<S>;
 
 export class State<S = any> {
@@ -27,25 +17,24 @@ export class State<S = any> {
     this.node = node;
   }
 
-  /** Ruby State[value] : Root 経由で lay を作る。 */
   static of<T>(value: T): State<T>;
   static of(): State<any>;
   static of(value: unknown = {}): State<any> {
     return new State(Root.of(value).toLay());
   }
 
-  /** Ruby State#| : ノードを即実行する。 */
+  /** Execute a node immediately. */
   pipe(other: Nodeish<S>): Result<S> {
     return this.call(this.coerceNode(other));
   }
 
-  /** Ruby State#& : ノードを蓄積して新しい State を返す。 */
+  /** Append a node to the pending sequence without executing it. */
   and(other: Nodeish<S>): State<S> {
     const nextNode = this.coerceNode(other);
     return new State<S>(this.lay, this.node ? this.node.then(nextNode) : nextNode);
   }
 
-  /** ノードを実行する。node 省略時は蓄積済みノードを走らせる。 */
+  /** Execute the supplied node, or the pending sequence when omitted. */
   call(
     node: Nodeish<S> | null = null,
     handlers: HandlerMap = EffectTree.realHandlers(),

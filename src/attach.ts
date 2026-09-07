@@ -1,31 +1,20 @@
-// ==================================================================
-// attachRoot — Root#subscribe ベースの host 連携ブリッジ。
-//
-// フェーズ 3-d: cray の attachCray 相当。React などフレームワークには依存せず、
-// Root の subscribe コールバックで state 変化を host へ流す薄い層に留める。
-// 返り値は購読解除関数 (Root#subscribe と同じ)。
-//
-// Root#subscribe は購読直後にまず { type:'snapshot' } を 1 度流し、以降 commit
-// のたびに { type:'commit' } を流す。attachRoot はそれを select で射影し、
-// listener と (任意の) onSnapshot / onCommit へ配る。
-// ==================================================================
-
 import type { Root, RootEvent } from './root.js';
 
 export interface AttachRootOptions<S = unknown> {
-  /** event.value (コミット済み state) を host が使う形へ射影する。既定は恒等。 */
+  /** Project committed state for the host. Defaults to the identity function. */
   select?: (state: unknown) => S;
-  /** 購読直後の初期 snapshot を受け取る (任意)。 */
+  /** Receive the initial snapshot immediately after subscribing. */
   onSnapshot?: (state: S, event: RootEvent) => void;
-  /** commit のたびに呼ばれる (任意)。 */
+  /** Receive each committed state. */
   onCommit?: (state: S, event: RootEvent) => void;
-  /** 初期 snapshot を listener/onSnapshot へ流さない。既定 false。 */
+  /** Suppress the initial snapshot for listener and onSnapshot. Defaults to false. */
   skipSnapshot?: boolean;
 }
 
 /**
- * Root を host へ結線する。listener は snapshot / commit の両方で射影 state を
- * 受け取る (skipSnapshot 時は commit のみ)。戻り値を呼ぶと購読解除する。
+ * Connect a Root to a host. The listener receives projected state on the initial
+ * snapshot and each commit, unless skipSnapshot suppresses the snapshot.
+ * Call the returned function to unsubscribe.
  */
 export function attachRoot<S = unknown>(
   root: Root,

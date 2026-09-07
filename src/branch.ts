@@ -1,10 +1,4 @@
-// ==================================================================
-// Branch — 条件分岐 (Ruby When / Else / Branch)。
-//
-// Ruby 版 Berylx::Branch の TS 移植。When[name] { predicate } >> body で
-// arm を作り、branch | branch で arm を連ねる。実行は EffectTree に一本化し、
-// arm 選択と no_branch_matched の algebra は EffectTree.runBranch に集約する。
-// ==================================================================
+// EffectTree owns branch selection and the no_branch_matched result.
 
 import type { Result } from './result.js';
 import type { BerylxNode, NamedNode } from './node.js';
@@ -14,14 +8,14 @@ import { Sequence } from './sequence.js';
 import { Parallel } from './parallel.js';
 import { EffectTree } from './effect-tree/index.js';
 
-/** 述語 (Ruby Predicate)。else_branch なら常に真。 */
+/** A branch predicate; elseBranch marks an unconditional fallback. */
 export interface Predicate<S = any> {
   readonly name: string;
   readonly block: ((focus: Focus<S, []>) => unknown) | null;
   readonly elseBranch: boolean;
 }
 
-/** 分岐の 1 本 (Ruby BranchArm)。 */
+/** A predicate paired with the workflow to run when it matches. */
 export interface BranchArm<S = any> {
   readonly predicate: Predicate<S>;
   readonly body: BerylxNode<S>;
@@ -37,18 +31,17 @@ export class When<S = any> {
     this.predicate = { name: String(name), block, elseBranch };
   }
 
-  /** Ruby When[name] { block } に対応。 */
   static of<S = any>(name: string, block: (focus: Focus<S, []>) => unknown): When<S> {
     return new When<S>(name, block, false);
   }
 
-  /** Ruby When#>> : arm を 1 本持つ Branch を作る。 */
+  /** Pair this predicate with a body to create a single-arm branch. */
   then(other: BerylxNode<S>): Branch<S> {
     return new Branch<S>([{ predicate: this.predicate, body: other }]);
   }
 }
 
-/** Ruby Else 定数相当。常に真の arm を作る。 */
+/** An unconditional fallback arm, used as Else.then(body). */
 export const Else = new When('else', null, true);
 
 export class Branch<S = any> implements BerylxNode<S> {
@@ -58,7 +51,7 @@ export class Branch<S = any> implements BerylxNode<S> {
     this.arms = Object.freeze([...arms]);
   }
 
-  /** Ruby Branch#| : arm を連結する。 */
+  /** Append the other branch's arms in order. */
   or(other: Branch<S>): Branch<S> {
     return new Branch<S>([...this.arms, ...other.arms]);
   }

@@ -1,6 +1,6 @@
 /**
- * Result の失敗ではなく、interpreter の外へ抜ける制御合図の基底 class。
- * downstream runtime はこれを継承して固有の signal を定義できる。
+ * Base class for control signals that escape the interpreter without becoming Err.
+ * Downstream runtimes can extend it to define their own signals.
  */
 export class ControlSignal extends Error {
   constructor(message = '') {

@@ -1,19 +1,7 @@
 #!/usr/bin/env node
-// ==================================================================
-// 型レベル検査を二方向で回す。
-//
-//   正の対照 : test/types/*.types.ts が tsc を通ること。
-//              ts-expect-error 付きの行はエラーが出ないと tsc 自身が
-//              「Unused 'ts-expect-error' directive」で落ちるので、
-//              負の対照が実際に落ちていることもここで担保される。
-//
-//   変異検査 : ts-expect-error を全部剥がした写しを tsc に掛け、
-//              剥がした行がちょうどエラーになること。
-//              ts-expect-error は理由を問わずエラーを飲むので、これが無いと
-//              「自分のタイポで落ちているだけ」の負の対照を見抜けない。
-//              行が足りなければ「落ちるはずが落ちていない」、
-//              余れば「無関係な場所が壊れている」。どちらも失格。
-// ==================================================================
+// Validate both acceptance and rejection: the original fixtures must compile,
+// then copies with @ts-expect-error removed must fail at exactly those lines.
+// This catches missing errors and directives hiding unrelated mistakes.
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
@@ -31,7 +19,7 @@ function tsc(project) {
   }
 }
 
-/** tsc の出力から、指定ファイルのエラー行番号だけを拾う。 */
+/** Extract compiler error line numbers for the requested file. */
 function errorLines(out, file) {
   const name = basename(file);
   const lines = new Set();
@@ -49,23 +37,23 @@ const targets = readdirSync(TYPES_DIR)
   .map((f) => join(TYPES_DIR, f));
 
 if (targets.length === 0) {
-  console.error('check-types: test/types/*.types.ts が 1 本も無い');
+  console.error('check-types: no test/types/*.types.ts files found');
   process.exit(1);
 }
 
 let failed = false;
 
-// --- 正の対照 ------------------------------------------------------
+// Positive control
 const positive = tsc(join(TYPES_DIR, 'tsconfig.json'));
 if (!positive.ok) {
-  console.error('✗ 正の対照が落ちた (型付き API が壊れているか、負の対照がエラーを出していない)');
+  console.error('✗ Positive control failed: the typed API is invalid or an expected error is missing');
   console.error(positive.out.trim());
   failed = true;
 } else {
-  console.log(`✓ 正の対照 ${targets.length} file — tsc clean (ts-expect-error は全て消費された)`);
+  console.log(`✓ Positive control: ${targets.length} file(s) compile; all @ts-expect-error directives were used`);
 }
 
-// --- 変異検査 ------------------------------------------------------
+// Mutation check
 rmSync(TMP_DIR, { recursive: true, force: true });
 mkdirSync(TMP_DIR, { recursive: true });
 writeFileSync(
@@ -81,8 +69,7 @@ writeFileSync(
         sourceMap: false,
       },
       include: ['../../../src', './*.types.ts'],
-      // ルート tsconfig の exclude は "test" を落とすので必ず上書きする。
-      // 上書きを忘れると型テストが 1 行も検査されないまま緑になる。
+      // Override the root exclusion so these fixtures are actually checked.
       exclude: ['../../../node_modules', '../../../dist'],
     },
     null,
@@ -95,7 +82,7 @@ for (const target of targets) {
   const expected = new Set();
   const mutated = src.map((line, i) => {
     if (/^\s*\/\/\s*@ts-expect-error/.test(line)) {
-      // ディレクティブを剥がすと、その「次の」行がエラーになるはず。
+      // Removing the directive must expose an error on the following line.
       expected.add(i + 2);
       return '// (directive stripped by check-types.mjs)';
     }
@@ -103,12 +90,12 @@ for (const target of targets) {
   });
 
   if (expected.size === 0) {
-    console.error(`✗ ${target}: 負の対照が 1 本も無い`);
+    console.error(`✗ ${target}: no negative controls found`);
     failed = true;
     continue;
   }
 
-  // 1 段深くなるので src への相対 import を付け替える。
+  // Copies are one directory deeper, so adjust relative source imports.
   writeFileSync(
     join(TMP_DIR, basename(target)),
     mutated.join('\n').replace(/'\.\.\/\.\.\/src\//g, "'../../../src/"),
@@ -129,16 +116,16 @@ for (const target of targets) {
 
   if (missing.length > 0) {
     console.error(
-      `✗ ${target}: 剥がしても落ちない行 = ${missing.join(', ')} (負の対照が実際には検査していない)`,
+      `✗ ${target}: missing expected errors on lines ${missing.join(', ')} (negative controls did not reject)`,
     );
     failed = true;
   }
   if (extra.length > 0) {
-    console.error(`✗ ${target}: 意図しない行がエラー = ${extra.join(', ')}`);
+    console.error(`✗ ${target}: unexpected errors on lines ${extra.join(', ')}`);
     failed = true;
   }
   if (missing.length === 0 && extra.length === 0) {
-    console.log(`✓ 変異検査 ${target} — 負の対照 ${expected.size} 本が全て正しい行で落ちた`);
+    console.log(`✓ Mutation check: ${target} rejected all ${expected.size} negative controls on the expected lines`);
   }
 }
 

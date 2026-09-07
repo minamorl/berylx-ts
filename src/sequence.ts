@@ -1,10 +1,5 @@
-// ==================================================================
-// Sequence — 逐次合成 (Ruby >>)。
-//
-// Ruby 版 Berylx::Sequence の TS 移植。ネストした Sequence は平坦化する。
-// 実行は EffectTree (darkcore Effect 木) に一本化し、短絡・Catch 境界の
-// 回復といった結果封筒の algebra は EffectTree 側に集約する。
-// ==================================================================
+// Nested sequences are flattened. EffectTree owns short-circuiting and
+// recovery at Catch boundaries.
 
 import type { Result } from './result.js';
 import type { BerylxNode, NamedNode } from './node.js';
@@ -38,7 +33,7 @@ export class Sequence<S = any> implements BerylxNode<S> {
     return Sequence.buildRescue<S>(this, handler, name, block);
   }
 
-  /** Ruby Sequence.build_rescue: block があれば RescueBlock を、無ければ handler を使う。 */
+  /** Prefer a supplied recovery callback over the handler node. */
   static buildRescue<S = any>(
     body: BerylxNode<S>,
     handler: BerylxNode<S> | null,
