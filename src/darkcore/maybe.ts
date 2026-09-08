@@ -1,15 +1,8 @@
-// ==================================================================
-// Maybe — 失敗を「無」で表す (Nothing で短絡)。
-//
-// darkcore-ruby maybe.rb の TS 移植。Just は継続、Nothing は bind/fmap/ap を
-// 素通り (短絡) する。fmap/map/ap は Monad の導出 (pure+bind) を使う。
-// ==================================================================
-
 import { deriveFmap, deriveAp } from './monad.js';
 
 export type Maybe<A> = Just<A> | Nothing;
 
-/** 値を保持し継続する枝。 */
+/** A present value that continues through bind, fmap, and ap. */
 export class Just<A> {
   readonly value: A;
 
@@ -53,7 +46,7 @@ export class Just<A> {
   }
 }
 
-/** 中身が無いので次へ進まない = 短絡する枝。 */
+/** An absent value that short-circuits subsequent operations. */
 export class Nothing {
   static pure<A>(x: A): Just<A> {
     return new Just(x);
@@ -88,7 +81,6 @@ export class Nothing {
   }
 }
 
-/** Ruby module Maybe 相当の smart constructor 群。 */
 export const Maybe = {
   pure: <A>(x: A): Maybe<A> => new Just(x),
   just: <A>(x: A): Maybe<A> => new Just(x),

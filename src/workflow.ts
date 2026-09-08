@@ -1,10 +1,3 @@
-// ==================================================================
-// Workflow — 名前つき workflow のラッパ。
-//
-// Ruby 版 Berylx::Workflow の TS 移植。build 関数の戻り値を body として保持し、
-// compile で名前つき Graph を作る。
-// ==================================================================
-
 import type { Result } from './result.js';
 import type { BerylxNode, NamedNode } from './node.js';
 import type { RescueHandlerBlock } from './rescue.js';
@@ -21,7 +14,7 @@ export class Workflow implements BerylxNode {
     this.body = body;
   }
 
-  /** Ruby Workflow[name] { body } に対応。build は body を返す関数。 */
+  /** Invoke build immediately and retain its result as the workflow body. */
   static of(name: string, build: () => BerylxNode): Workflow {
     return new Workflow(name, build());
   }

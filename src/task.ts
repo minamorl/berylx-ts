@@ -1,11 +1,3 @@
-// ==================================================================
-// Task — 名前つき状態遷移。berylx の葉ノード。
-//
-// Ruby 版 Berylx::Task の TS 移植。block は Focus を受け取り、Focus か
-// 結果封筒 (Ok/Err) を返す。例外は捕捉して Err (failed_node/trace 付き)
-// に変換する。演算子は then(>>) / par(&) / pipe(|=then) へ写す。
-// ==================================================================
-
 import { ResultOps, Err, type Result } from './result.js';
 import { Focus } from './focus.js';
 import type { BerylxNode, NamedNode } from './node.js';
@@ -16,12 +8,13 @@ import type { RescueHandlerBlock } from './rescue.js';
 import { Perform } from './perform.js';
 import { ControlSignal } from './control-signal.js';
 
-/** Task の本体。1 引数の関数も代入でき、2 引数を宣言すると Perform を受け取る。 */
+/** Accepts a single-argument callback; declare a second parameter to receive Perform. */
 export type TaskBlock<S = any> = (
   focus: Focus<S, []>,
   performer: Perform,
 ) => Focus<S, any> | Result<S> | unknown;
 
+/** A named state transition. Ordinary exceptions become Err; ControlSignal escapes. */
 export class Task<S = any> implements BerylxNode<S>, NamedNode {
   readonly name: string;
   private readonly block: TaskBlock<S>;
@@ -34,7 +27,6 @@ export class Task<S = any> implements BerylxNode<S>, NamedNode {
     this.block = block;
   }
 
-  /** Ruby Task[name] { ... } / Task.build に対応。 */
   static of<S = any>(name: string, block: TaskBlock<S>): Task<S> {
     return new Task(name, block);
   }
@@ -65,7 +57,6 @@ export class Task<S = any> implements BerylxNode<S>, NamedNode {
     return new Parallel<S>([this, other]);
   }
 
-  /** Ruby Task#| は self >> other。 */
   pipe(other: BerylxNode<S>): BerylxNode<S> {
     return this.then(other);
   }
@@ -82,7 +73,7 @@ export class Task<S = any> implements BerylxNode<S>, NamedNode {
     return [this];
   }
 
-  /** 2 個以上の仮引数を宣言した Task だけが作用を要求する。 */
+  /** Effects are enabled only when the callback declares at least two parameters. */
   effectful(): boolean {
     return this.block.length >= 2;
   }

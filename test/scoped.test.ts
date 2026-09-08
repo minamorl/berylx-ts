@@ -1,7 +1,3 @@
-// berylx<S>() scope 付き入口の実行時テスト。
-//
-// 型が効いているかは test/types/ と scripts/check-types.mjs が見る。ここでは
-// 「型を足しても実行時の振る舞いが Task.of / Flow.of と一致すること」だけを見る。
 import { describe, it, expect } from 'vitest';
 import { berylx, Ok, Err, Task, Flow, Lay, Else } from '../src/index.js';
 
@@ -17,13 +13,13 @@ const b = berylx<Order>();
 const toObj = (r: unknown) => (r as Ok<Order> | Err<Order>).focus.toObject();
 
 describe('berylx<S>() scoped entry', () => {
-  it('task は Task.of と同じ結果になる', () => {
+  it('produces the same task result as Task.of', () => {
     const scoped = b.task('strip', (f) => f.at('user').at('name').update((s) => s.trim()));
     const plain = Task.of('strip', (f) => f.at('user').at('name').update((s: string) => s.trim()));
     expect(toObj(b.flow(base).call(scoped))).toEqual(toObj(Flow.of(Lay.of(base)).call(plain)));
   });
 
-  it('then / par / when / rescueWith が繋がる', () => {
+  it('composes tasks through then', () => {
     const strip = b.task('strip', (f) => f.at('user').at('name').update((s) => s.trim()));
     const bump = b.task('bump', (f) => f.at('total').update((n) => n + 1));
     const result = b.flow(base).call(strip.then(bump));
@@ -31,7 +27,7 @@ describe('berylx<S>() scoped entry', () => {
     expect(toObj(result)).toEqual({ user: { name: 'mina', age: 17 }, total: 1, status: null });
   });
 
-  it('when / Else の分岐が走る', () => {
+  it('selects branches with when and Else', () => {
     const paid = b.task('paid', (f) => f.at('total').set(100));
     const free = b.task('free', (f) => f.at('total').set(0));
     const branch = b
@@ -43,7 +39,7 @@ describe('berylx<S>() scoped entry', () => {
     expect(toObj(b.flow({ ...base, status: 'trial' }).call(branch))).toMatchObject({ total: 0 });
   });
 
-  it('rescueWith は then() の戻り値からも呼べる', () => {
+  it('supports rescueWith on the result of then()', () => {
     const bump = b.task('bump', (f) => f.at('total').update((n) => n + 1));
     const boom = b.task('boom', () => {
       throw new Error('nope');
@@ -54,7 +50,7 @@ describe('berylx<S>() scoped entry', () => {
     expect(toObj(result)).toMatchObject({ total: 1, status: 'trial' });
   });
 
-  it('root / state も同じ S で走る', () => {
+  it('preserves the state type through root and state', () => {
     const bump = b.task('bump', (f) => f.at('total').update((n) => n + 1));
     const root = b.root(base);
     expect(root.pipe(bump)).toBeInstanceOf(Ok);
@@ -62,7 +58,7 @@ describe('berylx<S>() scoped entry', () => {
     expect(toObj(b.state(base).pipe(bump))).toMatchObject({ total: 1 });
   });
 
-  it('parallel の既定 (three-way join) も scope 付きで効く', () => {
+  it('uses the default three-way join with scoped tasks', () => {
     const setName = b.task('setName', (f) => f.at('user').at('name').set('mina'));
     const setTotal = b.task('setTotal', (f) => f.at('total').set(9));
     const result = b.flow(base).call(setName.par(setTotal));

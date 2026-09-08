@@ -1,29 +1,15 @@
-// ==================================================================
-// IOEffects — 標準 IO の語彙 (smart constructor 群)。
-//
-// darkcore-ruby io_effects.rb の TS 移植。すべて「作用を値化」するだけで、
-// ここでは一切 IO が起きない。read も stdin も shell も全部【同格の tagged
-// effect】= ただのデータ (Darkcore.op ラッパ)。
-//
-// program を一文字も変えず handlers を差し替えるだけで、圏R (本物の OS) /
-// 圏V (インメモリ仮想世界 = VirtualWorld) を切り替える。
-//   (spec: category.selection = handler_map / io.no_opaque_thunk)
-// ==================================================================
-
 import * as fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { op } from './effect.js';
 import type { Effect, HandlerMap } from './effect.js';
 
-/** IO 作用の smart constructor 群。呼んでも副作用は起きずタグ付き作用を返す。 */
+/** Describe IO as tagged effects without performing it. */
 export const IOEffects = {
-  // -- コンソール --
   say: (msg: unknown): Effect<null> => op('say', msg, decodeNull),
   warn: (msg: unknown): Effect<null> => op('warn', msg, decodeNull),
   ask: (prompt: unknown = null): Effect<string | undefined> =>
     op('ask', prompt, decodeOptionalString),
 
-  // -- ファイル --
   read: (path: string): Effect<string> => op('read', path, decodeString),
   write: (path: string, data: string): Effect<null> =>
     op('write', stringPair(path, data), decodeNull),
@@ -33,7 +19,6 @@ export const IOEffects = {
   exists: (path: string): Effect<boolean> => op('exists', path, decodeBoolean),
   listDir: (path: string): Effect<string[]> => op('list_dir', path, decodeStringArray),
 
-  // -- 環境 / システム --
   getenv: (key: string): Effect<string | null | undefined> =>
     op('getenv', key, decodeNullableString),
   now: (): Effect<unknown> => op('now', null, decodeUnknown),
@@ -110,7 +95,7 @@ function decodeStringPair(value: unknown): [string, string] {
   return [value[0], value[1]];
 }
 
-/** stdin から 1 行を同期読み取る (real の ask 用。EOF/非ブロッキングは空文字)。 */
+/** Read a line from stdin synchronously, returning the data read before EOF or an error. */
 function readLineSync(): string {
   const buf = Buffer.alloc(1);
   let out = '';
@@ -127,15 +112,12 @@ function readLineSync(): string {
       out += ch;
     }
   } catch {
-    // EAGAIN 等は空文字にフォールバック。
+    // Nonblocking reads may fail with EAGAIN; retain any input already read.
   }
   return out;
 }
 
-/**
- * 圏R — 本物の OS。実ファイル・実 stdin・実時刻・実乱数・実 shell。
- * 呼ぶたびに新鮮な handler マップを返す。
- */
+/** Create a fresh handler map backed by real files, stdin, time, randomness, and shell commands. */
 export function realHandlers(): HandlerMap {
   return {
     say: (m) => {
@@ -180,7 +162,6 @@ export function realHandlers(): HandlerMap {
   };
 }
 
-/** VirtualWorld のコンストラクタ引数。 */
 export interface VirtualWorldOptions {
   files?: Record<string, string>;
   inputs?: string[];
@@ -191,18 +172,18 @@ export interface VirtualWorldOptions {
 }
 
 /**
- * VirtualWorld — 圏V。完全インメモリの仮想世界。OS を一切触らないので決定的で
- * モック不要のテストができる。handlers() を program に差し込むだけで real IO と
- * 入れ替わる。fs / outputs / warnings / log を公開する。
+ * An in-memory IO environment for deterministic tests without OS access.
+ * Substitute handlers() for realHandlers() without changing the program.
+ * File contents, console output, and the effect log remain available for inspection.
  */
 export class VirtualWorld {
-  /** 仮想ファイルシステム { path => contents }。 */
+  /** Virtual file contents indexed by path. */
   readonly fs: Record<string, string>;
-  /** say の記録。 */
+  /** Recorded say payloads. */
   readonly outputs: unknown[];
-  /** warn の記録。 */
+  /** Recorded warn payloads. */
   readonly warnings: unknown[];
-  /** 作用の記録 [[tag, arg], ...]。 */
+  /** Recorded effects as [tag, argument] pairs. */
   readonly log: [string, unknown][];
 
   private readonly inputs: string[];

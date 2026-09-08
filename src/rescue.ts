@@ -1,13 +1,3 @@
-// ==================================================================
-// Rescue / Catch / RescueBlock — 失敗回復の合成子。
-//
-// Ruby 版 Berylx::RescueBlock / Berylx::Catch / Berylx::Rescue の TS 移植。
-//   RescueBlock : (error, focus) を受け取り回復した結果封筒を返すブロック handler。
-//   Catch       : Sequence 内の短絡境界。既定では fatal エラーを回復しない。
-//   Rescue      : body の Err を回復 handler で差し替える合成子。
-// 実行はいずれも EffectTree に委譲する。
-// ==================================================================
-
 import { ResultOps, Ok, Err, type Result } from './result.js';
 import { Focus } from './focus.js';
 import type { BerylxError } from './error.js';
@@ -18,14 +8,14 @@ import { EffectTree } from './effect-tree/index.js';
 import { Perform } from './perform.js';
 import { ControlSignal } from './control-signal.js';
 
-/** 回復ブロック handler。本体の第三引数には現在の handler map の Perform が渡る。 */
+/** Declare a third parameter to receive Perform for the current handler map. */
 export type RescueHandlerBlock<S = any> = (
   error: unknown,
   focus: Focus<S, []>,
   performer: Perform,
 ) => Focus<S, any> | Result<S> | unknown;
 
-/** ブロックで回復する handler (Ruby RescueBlock)。 */
+/** Recover from a failure using a named callback. */
 export class RescueBlock<S = any> implements NamedNode {
   readonly name: string;
   private readonly block: RescueHandlerBlock<S>;
@@ -35,7 +25,7 @@ export class RescueBlock<S = any> implements NamedNode {
     this.block = block;
   }
 
-  /** error_result から回復を試みる。error は cause 優先 (無ければ構造化エラー)。 */
+  /** Recover using the underlying cause, or the structured error if no cause exists. */
   call(focus: Focus<S, []>, errorResult: Err<S>, performer?: Perform): Result<S> {
     try {
       const errArg = errorResult.error.cause ?? errorResult.error;
@@ -61,7 +51,7 @@ export class RescueBlock<S = any> implements NamedNode {
     return [this];
   }
 
-  /** 3 個以上の仮引数を宣言した recovery block だけが作用を要求する。 */
+  /** Effects are enabled only when the callback declares at least three parameters. */
   effectful(): boolean {
     return this.block.length >= 3;
   }
@@ -72,15 +62,13 @@ export class RescueBlock<S = any> implements NamedNode {
   }
 }
 
-/** 回復 handler は RescueBlock か call を持つノード (Task 等)。 */
 export type RescueHandler<S = any> = RescueBlock<S> | BerylxNode<S>;
 
-/** Catch のオプション (Ruby options)。 */
 export interface CatchOptions {
   fatal?: boolean;
 }
 
-/** Sequence 内の短絡境界 (Ruby Catch)。 */
+/** A recovery boundary within a Sequence. Fatal errors are excluded by default. */
 export class Catch<S = any> implements BerylxNode<S> {
   readonly name: string;
   readonly handler: RescueHandler<S>;
@@ -100,7 +88,6 @@ export class Catch<S = any> implements BerylxNode<S> {
     }
   }
 
-  /** Ruby Catch[name, **options] { block } に対応。 */
   static of<S = any>(
     name: string = 'catch',
     handler: RescueHandler<S> | null = null,
@@ -110,7 +97,7 @@ export class Catch<S = any> implements BerylxNode<S> {
     return new Catch<S>(name, handler, options, block);
   }
 
-  /** この Catch が当該エラーを回復対象にするか。 */
+  /** Whether this boundary is configured to recover from the given error. */
   catches(errorResult: Err<S>): boolean {
     return !this.terminal(errorResult.error) || this.catchesTerminal;
   }
@@ -145,7 +132,7 @@ export class Catch<S = any> implements BerylxNode<S> {
   }
 }
 
-/** body の Err を回復 handler で差し替える合成子 (Ruby Rescue)。 */
+/** Replace a failed body result with the recovery handler's result. */
 export class Rescue<S = any> implements BerylxNode<S> {
   readonly body: BerylxNode<S>;
   readonly handler: RescueHandler<S>;

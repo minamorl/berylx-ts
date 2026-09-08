@@ -1,16 +1,5 @@
-// ==================================================================
-// AsyncTask — 非同期な名前つき状態遷移 (Task#call の Promise 版)。
-//
-// フェーズ 3-a: cray の Cray が Promise<Result> 前提なので、その移行対象を
-// 満たすため berylx-ts に非同期 Task を足す。block は Focus を受け取り Focus か
-// 結果封筒 (Ok/Err) を Promise で (または同期で) 返す。例外は捕捉して Err
-// (failedNode/trace 付き) に変換する。意味論は Task と 1:1 で、違いは block を
-// await する点だけ。
-//
-// 実行は EffectTree の async インタプリタ (EffectTree.runAsync) が担う。同期
-// 経路 (call) では動かせないので、call は明示的に例外を投げてガードする
-// (既存の同期実行系は一切壊さない)。
-// ==================================================================
+// Async tasks run through EffectTree.runAsync. Ordinary exceptions become Err
+// results with task context; ControlSignal escapes the interpreter.
 
 import { ResultOps, Err, type Result } from './result.js';
 import { Focus } from './focus.js';
@@ -22,7 +11,7 @@ import type { RescueHandlerBlock } from './rescue.js';
 import { Perform } from './perform.js';
 import { ControlSignal } from './control-signal.js';
 
-/** AsyncTask の本体。2 引数を宣言すると現在の handler map の Perform も受け取る。 */
+/** Declare a second parameter to receive Perform for the current handler map. */
 export type AsyncTaskBlock<S = any> = (
   focus: Focus<S, []>,
   performer: Perform,
@@ -40,12 +29,11 @@ export class AsyncTask<S = any> implements BerylxNode<S>, NamedNode {
     this.block = block;
   }
 
-  /** Ruby Task[name] { ... } の非同期版 smart constructor。 */
   static of<S = any>(name: string, block: AsyncTaskBlock<S>): AsyncTask<S> {
     return new AsyncTask<S>(name, block);
   }
 
-  /** block を await し、Focus/Result へ正規化する。例外は Err に写す。 */
+  /** Await the callback and normalize its output; ordinary exceptions become Err. */
   async callAsync(focus: unknown, performer?: Perform): Promise<Result<S>> {
     const root = ResultOps.coerceFocus<S>(focus);
     try {
@@ -64,7 +52,7 @@ export class AsyncTask<S = any> implements BerylxNode<S>, NamedNode {
     }
   }
 
-  /** 同期実行はできない。async 実行系 (EffectTree.runAsync / callAsync) を使う。 */
+  /** Always throws. Use EffectTree.runAsync or callAsync to execute async tasks. */
   call(_focus: unknown): Result<S> {
     throw new Error(
       `AsyncTask "${this.name}" is asynchronous: run it with EffectTree.runAsync or callAsync, not the sync path`,
@@ -79,7 +67,6 @@ export class AsyncTask<S = any> implements BerylxNode<S>, NamedNode {
     return new Parallel<S>([this, other]);
   }
 
-  /** Ruby Task#| は self >> other。 */
   pipe(other: BerylxNode<S>): BerylxNode<S> {
     return this.then(other);
   }
@@ -100,7 +87,7 @@ export class AsyncTask<S = any> implements BerylxNode<S>, NamedNode {
     return [this];
   }
 
-  /** 2 個以上の仮引数を宣言した AsyncTask だけが作用を要求する。 */
+  /** Effects are enabled only when the callback declares at least two parameters. */
   effectful(): boolean {
     return this.block.length >= 2;
   }

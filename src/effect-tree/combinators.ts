@@ -1,13 +1,5 @@
-// ==================================================================
-// Berylx EffectTree (combinator interpreters) — parallel / branch / rescue の
-// real interpreter。
-//
-// Ruby 版 combinators.rb の TS 移植。core (index.ts) は compile / build / run /
-// handler マップの骨格だけを持ち、各合成子の「berylx 圏の algebra」(短絡・
-// merge・回復・trace 付与) はここに置く。darkcore の bind は構造の接ぎ木のみで、
-// 圏の algebra は現れない。Err 判定・失敗合成・回復といった意味はすべて
-// berylx 側のこの site で行う。
-// ==================================================================
+// Combinator interpreters supply berylx semantics: short-circuiting, merging,
+// recovery, and error context. Darkcore.bind only joins the effect-tree structure.
 
 import * as Darkcore from '../darkcore.js';
 import { ResultOps, Ok, Err, type Result } from '../result.js';
@@ -23,15 +15,10 @@ import { Perform } from '../perform.js';
 import { ControlSignal } from '../control-signal.js';
 import { decodeResult } from './payload.js';
 
-// ----------------------------------------------------------------
-// Parallel — Parallel#call と同一セマンティクス。各 branch を副木として実行し、
-// 失敗があれば onErr (payload のタグ) に従って合成、無ければ reducer で focus を
-// merge する。short_circuit / accumulate は handler の分岐ではなく payload の
-// node.onErr (タグ) で運ぶ。
-//
-// Ruby は Thread で並列だったが、TS は同期実行なので branch 順に逐次実行する。
-// どの Err を返すか / merge 結果は Ruby と一致する。
-// ----------------------------------------------------------------
+/**
+ * Run branches in declaration order in this synchronous interpreter. onErr is
+ * carried in the node payload and selects failure handling after branches finish.
+ */
 export function runParallel(node: Parallel, focus: Focus, handlers: Darkcore.HandlerMap): Result {
   const branchResults: Result[] = [];
   const thrown: unknown[] = [];
@@ -58,7 +45,7 @@ export function runParallel(node: Parallel, focus: Focus, handlers: Darkcore.Han
   return ResultOps.ok(merged);
 }
 
-/** short_circuit なら最初の Err、accumulate なら全失敗を parallelErrors に集約。 */
+/** Return the first Err or collect every failure in parallelErrors, according to onErr. */
 export function parallelHandleFailures(node: Parallel, focus: Focus, failures: Err[]): Result {
   if (node.onErr === 'short_circuit') {
     return failures[0];
@@ -66,7 +53,7 @@ export function parallelHandleFailures(node: Parallel, focus: Focus, failures: E
   return parallelError(focus, failures);
 }
 
-/** 全 branch の focus を reducer で畳む。reducer が投げたら parallel の Err に写す。 */
+/** Merge branch focus values; convert reducer errors to Err and rethrow control signals. */
 export function parallelMerge(node: Parallel, focus: Focus, branchResults: Result[]): Focus | Err {
   try {
     return branchResults
@@ -84,7 +71,7 @@ export function parallelMerge(node: Parallel, focus: Focus, branchResults: Resul
 }
 
 function parallelCallReducer(reducer: Reducer, left: Focus, right: Focus, base: Focus): Focus {
-  // Ruby の reducer.arity == 3 を関数 length で判別 (strict は base も受ける)。
+  // Three-argument reducers, including strict, also need the original focus.
   if (reducer.length === 3) {
     return (reducer as (l: Focus, r: Focus, b: Focus) => Focus)(left, right, base);
   }
@@ -107,11 +94,7 @@ function parallelError(focus: Focus, failures: Err[]): Err {
   return new Err(primary.focus ?? focus, error);
 }
 
-// ----------------------------------------------------------------
-// Branch — Branch#call と同一セマンティクス。最初に match した arm の body を
-// 副木として実行し、無ければ no_branch_matched で Err。predicate 評価は純粋
-// 計算なので handler 内で回す。
-// ----------------------------------------------------------------
+/** Run the first matching arm, or return no_branch_matched. Predicates run synchronously. */
 export function runBranch(node: Branch, focus: Focus, handlers: Darkcore.HandlerMap): Result {
   const arm = node.arms.find((candidate) => branchMatches(candidate.predicate, focus));
   if (!arm) {
@@ -127,10 +110,7 @@ export function branchMatches(predicate: Predicate, focus: Focus): boolean {
   return Boolean(predicate.block!(focus));
 }
 
-// ----------------------------------------------------------------
-// Rescue — Rescue#call と同一セマンティクス。body を副木として実行し、Ok なら
-// そのまま、Err なら回復 handler (RescueBlock / task) で差し替える。
-// ----------------------------------------------------------------
+/** Run the body, dispatching recovery only for Err results. */
 export function runRescue(node: Rescue, focus: Focus, handlers: Darkcore.HandlerMap): Result {
   const result = runSubtree(node.body, focus, handlers);
   if (result instanceof Ok) {
@@ -139,7 +119,7 @@ export function runRescue(node: Rescue, focus: Focus, handlers: Darkcore.Handler
   return dispatchRecover(node, result, handlers);
 }
 
-/** Rescue/Catch の回復も RECOVER effect として現在の map へ dispatch する。 */
+/** Dispatch recovery through RECOVER in the current handler map. */
 export function dispatchRecover(
   node: Rescue,
   errorResult: Err,
@@ -152,7 +132,7 @@ export function dispatchRecover(
   );
 }
 
-/** RECOVER の real interpreter。回復の副木にも同じ handler map を渡す。 */
+/** Interpret recovery using the same handler map for nested effects and subtrees. */
 export function realRecover(
   node: Rescue | Catch,
   errorResult: Err,
@@ -167,10 +147,8 @@ export function realRecover(
 }
 
 /**
- * 回復 handler の適用 — Rescue と Sequence 内の Catch 境界で共有する berylx 圏の
- * algebra。RescueBlock (ブロック handler) はエラーと focus を受け取り、それ以外の
- * node handler は focus を受け取って結果封筒を返す。handler 自身が Err を返したら
- * 回復失敗として元エラーを metadata に畳む。
+ * Apply a recovery block to the error and focus, or call a recovery node with the
+ * focus. A failing node handler retains the original error in its metadata.
  */
 export function recover(handler: RescueHandler, errorResult: Err): Result {
   if (handler instanceof RescueBlock) {

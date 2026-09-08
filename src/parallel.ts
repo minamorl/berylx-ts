@@ -1,26 +1,13 @@
-// ==================================================================
-// Parallel — 並列合成 (Ruby &)。
+// All branches start from the same base snapshot. Synchronous execution runs
+// them in branch order; EffectTree owns error handling and result merging.
 //
-// Ruby 版 Berylx::Parallel の TS 移植。ネストした Parallel は平坦化する。
-// reducer (既定 Merge.strict) と on_err (既定 short_circuit) を保持し、実行は
-// EffectTree に一本化する。短絡 / accumulate / merge の結果封筒 algebra は
-// EffectTree.runParallel に集約している。
-//
-// Ruby は Thread で真の並列だったが、TS は Task#call が同期関数なので
-// 各 branch を逐次実行する (branch 順で決定的)。セマンティクス (どの Err を
-// 返すか) は Ruby と一致する。
-//
-// merge algebra — 全 branch は同じ base snapshot から走るので、畳み込みは
-// base b を持つ three-way join μ_b(left, right) でなければならない。既定は
-// Merge.strict (arity 3)。満たすべき法則:
-//   μ_b(b, x) = x                     (左単位)
-//   μ_b(x, b) = x                     (右単位)
-//   Δ(l,b) ∩ Δ(r,b) = ∅  ⇒  両方の変更を保存  (disjoint update の保存)
-//   同一 path の非互換 update          ⇒  Err(merge_conflict)
-// Merge.deep は base を見ない two-way right-biased merge なのでこの法則を
-// 満たさない (既存キーへの disjoint update と右単位を落とす)。right wins を
-// 明示的に欲しいときだけ .reduce(Merge.deep()) で選ぶ。
-// ==================================================================
+// The default three-way merge, Merge.strict, obeys these laws for base b:
+//   μ_b(b, x) = x                         (left identity)
+//   μ_b(x, b) = x                         (right identity)
+//   Δ(l,b) ∩ Δ(r,b) = ∅  ⇒  preserve both updates
+//   incompatible updates at the same path ⇒ Err(merge_conflict)
+// Merge.deep ignores the base and does not satisfy these laws. Select it with
+// .reduce(Merge.deep()) only when right-side precedence is intentional.
 
 import type { Result } from './result.js';
 import type { BerylxNode, NamedNode } from './node.js';

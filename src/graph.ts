@@ -1,11 +1,3 @@
-// ==================================================================
-// Graph — workflow を検査可能なグラフ・DOT へコンパイルする。
-//
-// Ruby 版 Berylx::Graph の TS 移植。nodes / parallel_nodes / to_dot を提供する。
-// DotBuilder は #build が [entryIds, exitIds] を返し、Sequence が exit を次の
-// step の entry へ繋ぐ (Ruby と同一のノード id 採番・エッジ生成)。
-// ==================================================================
-
 import type { BerylxNode, NamedNode } from './node.js';
 import { Sequence } from './sequence.js';
 import { Parallel } from './parallel.js';
@@ -46,9 +38,8 @@ export class Graph {
   }
 
   /**
-   * フェーズ 3-c: cray の toMermaid 相当。DOT と同じノード木・同じ辿り方から
-   * Mermaid flowchart 文字列を生成する。ノード id は mermaid の識別子制約
-   * (英数字) に合わせて連番 nN を振り、表示名はラベルに載せる。
+   * Render the same workflow structure as toDot, using Mermaid flowchart syntax.
+   * Sequential alphanumeric IDs keep task names separate from node identifiers.
    */
   toMermaid(): string {
     const builder = new MermaidBuilder();
@@ -92,9 +83,9 @@ function collectParallelBranch(node: Parallel): string[][] {
 }
 
 /**
- * コンパイル済みノード木を辿り DOT のノード宣言とエッジを吐く。Task 名は
- * 重複しうるので全ノードに index 付きの安定 id を振る。#build は
- * [entryIds, exitIds] を返し、Sequence が exit を次 step の entry に繋げる。
+ * Emit DOT nodes and edges with indexed IDs because task names may repeat.
+ * build returns [entryIds, exitIds], allowing sequences to connect each step
+ * to the entry points of the next step.
  */
 class DotBuilder {
   readonly lines: string[] = [];
@@ -199,10 +190,9 @@ function armLabel(predicate: Predicate): string {
 }
 
 /**
- * DotBuilder と同じ木の辿り方で Mermaid flowchart を吐く。DOT の `#` 付き id は
- * mermaid では識別子に使えないので、宣言のたびに連番 id (n0, n1, ...) を振り、
- * 元の名前はラベル `id["name"]` に載せる。#build は [entryIds, exitIds] を返し、
- * Sequence が exit を次 step の entry へ繋げる (DotBuilder と同一構造)。
+ * Follow DotBuilder's traversal and entry/exit contract. Use n0, n1, ... IDs
+ * because DOT IDs containing # are not valid Mermaid identifiers, and retain
+ * task names in node labels.
  */
 class MermaidBuilder {
   readonly lines: string[] = [];
@@ -286,7 +276,6 @@ class MermaidBuilder {
     return label ? `${from} -->|${escapeMermaid(label)}| ${to}` : `${from} --> ${to}`;
   }
 
-  /** ノードを宣言し (`id["name"]`)、その id を返す。 */
   private node(name: string): string {
     const id = `n${this.counter}`;
     this.counter += 1;

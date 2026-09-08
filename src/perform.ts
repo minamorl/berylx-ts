@@ -1,6 +1,6 @@
 import { PURE, type HandlerMap } from './darkcore.js';
 
-/** Task と recovery block から、現在の handler map へ作用を発行する入口。 */
+/** Dispatch effects from tasks and recovery callbacks to the current handler map. */
 export class Perform {
   private readonly handlers: HandlerMap;
 

@@ -87,7 +87,7 @@ describe('Perform and custom handler maps', () => {
 
     expect(performer.perform('double', 21)).toBe(42);
     expect(() => performer.perform('missing')).toThrow(/no handler/i);
-    expect(() => performer.perform('pure')).toThrow(/reserved|予約/i);
+    expect(() => performer.perform('pure')).toThrow(/reserved/i);
   });
 
   it('passes the currently supplied sync custom map into two-argument Tasks and combinator subtrees', () => {

@@ -1,13 +1,5 @@
-// ==================================================================
-// State — s -> [a, s] を包む。run(s) で回す。
-//
-// darkcore-ruby state.rb の TS 移植。書くのは pure と bind だけで、fmap/map/ap
-// は Monad の導出を使う。static get/put/modify を持つ。
-// ==================================================================
-
 import { deriveFmap, deriveAp } from './monad.js';
 
-/** 状態遷移関数 s -> [a, s]。 */
 export type StateFn<S, A> = (s: S) => [A, S];
 
 export class State<S, A> {
@@ -21,7 +13,6 @@ export class State<S, A> {
     return new State<S, A>((s) => [x, s]);
   }
 
-  /** pure の別名 (of 慣習)。 */
   static of<S, A>(x: A): State<S, A> {
     return State.pure<S, A>(x);
   }
@@ -56,17 +47,17 @@ export class State<S, A> {
     return this.bind(() => next);
   }
 
-  /** 現在の状態を値として取り出す。 */
+  /** Read the current state as the result value. */
   static get<S>(): State<S, S> {
     return new State<S, S>((s) => [s, s]);
   }
 
-  /** 状態を s2 に置き換える (値は null)。 */
+  /** Replace the state and return null. */
   static put<S>(s2: S): State<S, null> {
     return new State<S, null>((_s) => [null, s2]);
   }
 
-  /** 状態をブロックで変換する (値は null)。 */
+  /** Transform the state and return null. */
   static modify<S>(f: (s: S) => S): State<S, null> {
     return new State<S, null>((s) => [null, f(s)]);
   }

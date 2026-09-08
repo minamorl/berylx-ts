@@ -1,28 +1,18 @@
-// ==================================================================
-// BerylxError — berylx の失敗を表す構造化エラー。
-//
-// Ruby 版 Berylx::Error の TS 移植。code / failed_node / trace はいずれも
-// Ruby では Symbol だったが、TS では string に落とす。cause は下層の
-// 例外 (JS Error) または任意値。parallel_errors は accumulate モードで
-// 集約した子エラー、metadata は付帯情報。
-// ==================================================================
-
 export interface BerylxErrorContext {
   cause?: unknown;
   failedNode?: string | null;
   trace?: TraceInput;
+  /** Child errors collected by parallel execution in accumulate mode. */
   parallelErrors?: BerylxError[];
   metadata?: Record<string, unknown>;
   fatal?: boolean;
 }
 
-/** trace 要素は名前つきノード (name を持つ) か、名前そのもの (string)。 */
 type TraceElement = string | { name: string };
 type TraceInput = ReadonlyArray<TraceElement | null | undefined> | undefined;
 
 export class BerylxError extends Error {
   readonly code: string;
-  // ES2022 の lib では Error.cause が存在するので override が要る (ES2020 では不要だった)。
   override readonly cause: unknown;
   readonly failedNode: string | null;
   readonly trace: readonly string[];
@@ -40,20 +30,19 @@ export class BerylxError extends Error {
     this.parallelErrors = Object.freeze([...(context.parallelErrors ?? [])]);
     this.metadata = Object.freeze({ ...(context.metadata ?? {}) });
     this._fatal = context.fatal ?? false;
-    // JS 側の stack を下層例外から引き継ぐ (Ruby の set_backtrace 相当)。
+    // Preserve the original failure location when wrapping an exception.
     if (context.cause instanceof Error && context.cause.stack) {
       this.stack = context.cause.stack;
     }
   }
 
-  /** `Error[code, message, **context]` に対応する smart constructor。 */
   static create(code: string, message: string = code, context: BerylxErrorContext = {}): BerylxError {
     return new BerylxError(code, message, context);
   }
 
   /**
-   * 任意値 (例外 / 既存 BerylxError / その他) から BerylxError を導く。
-   * 既に BerylxError なら context を畳んで返す。
+   * Create a structured error from an arbitrary value. Existing BerylxError
+   * instances retain their details with the supplied context merged in.
    */
   static from(value: unknown, context: BerylxErrorContext = {}): BerylxError {
     if (value instanceof BerylxError) {
@@ -86,7 +75,7 @@ export class BerylxError extends Error {
     });
   }
 
-  /** node をトレースの先頭へ差し込む (未設定なら failed_node にも入れる)。 */
+  /** Prepend a node to the trace and set failedNode if it is not already set. */
   prependTrace(node: TraceElement): BerylxError {
     const nodeName = typeof node === 'string' ? node : node.name;
     return this.withContext({
@@ -95,7 +84,7 @@ export class BerylxError extends Error {
     });
   }
 
-  /** 下層例外があればそれを、無ければ自分自身を返す。 */
+  /** Return the underlying cause, or this error when no cause is present. */
   unwrap(): unknown {
     if (this.cause == null) {
       return this;

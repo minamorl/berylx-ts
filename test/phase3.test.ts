@@ -1,8 +1,3 @@
-// フェーズ3 (機能ギャップ解消) の vitest 検証。
-//   3-a AsyncTask + async EffectTree (runAsync / async parallel / async rescue)。
-//   3-b cray Result 互換シム (fromCrayResult / toCrayResult)。
-//   3-c Graph#toMermaid ブリッジ。
-//   3-d attachRoot (Root#subscribe ベースの host 連携)。
 import { describe, it, expect } from 'vitest';
 import {
   Ok,
@@ -25,7 +20,6 @@ import {
   toCrayResult,
 } from '../src/index.js';
 
-// --- 3-a async Task / async EffectTree -----------------------------
 describe('phase 3-a: AsyncTask + async EffectTree', () => {
   const asyncStrip = () =>
     AsyncTask.of('strip', async (lay) => {
@@ -106,7 +100,6 @@ describe('phase 3-a: AsyncTask + async EffectTree', () => {
   });
 });
 
-// --- 3-b cray Result compat shim -----------------------------------
 describe('phase 3-b: cray Result compat shim', () => {
   it('fromCrayResult: Success -> Ok', () => {
     const result = fromCrayResult(Cray.success({ user: 'mina' }));
@@ -160,7 +153,6 @@ describe('phase 3-b: cray Result compat shim', () => {
   });
 });
 
-// --- 3-c toMermaid bridge ------------------------------------------
 describe('phase 3-c: Graph#toMermaid', () => {
   it('renders a sequence as a mermaid flowchart', () => {
     const strip = Task.of('strip', (lay) => lay);
@@ -195,7 +187,6 @@ describe('phase 3-c: Graph#toMermaid', () => {
   });
 });
 
-// --- 3-d attachRoot bridge -----------------------------------------
 describe('phase 3-d: attachRoot', () => {
   it('emits the initial snapshot then every commit', () => {
     const root = Root.of({ count: 0 });
@@ -208,7 +199,7 @@ describe('phase 3-d: attachRoot', () => {
     expect(seen).toEqual([{ count: 0 }, { count: 1 }, { count: 2 }]);
     unsubscribe();
     root.pipe(Task.of('inc3', (lay) => lay.at('count').set(3)));
-    expect(seen).toHaveLength(3); // 解除後は流れない
+    expect(seen).toHaveLength(3); // No events are delivered after unsubscribing.
   });
 
   it('supports select projection and skipSnapshot / onCommit', () => {

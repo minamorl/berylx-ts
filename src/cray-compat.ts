@@ -1,25 +1,13 @@
-// ==================================================================
-// cray Result 互換シム — cray の Success/Failure ⇄ berylx Ok/Err 相互変換。
-//
-// フェーズ 3-b: 消費側を段階置換できるよう、cray の結果封筒 (Success/Failure) と
-// berylx の結果封筒 (Ok/Err) を橋渡しするアダプタを提供する。cray の任意型 E は
-// MIGRATION.md の方針に従って BerylxError へ畳む:
-//   - E が既に BerylxError            → そのまま採用。
-//   - E が Error                      → code=name / message=message / cause=E、
-//                                       metadata.crayError に原値を退避。
-//   - E が string                     → code=E に写す (message も E)。
-//   - それ以外 (任意オブジェクト等)   → code='cray_failure'、metadata.crayError へ畳む。
-//
-// cray 本体は berylx-ts に無いので、シムは自前の CraySuccess/CrayFailure を
-// 提供しつつ、外来の cray 風オブジェクト (isSuccess/isFailure・{success}・
-// {tag} など) も構造的に受理する。
-// ==================================================================
+// Adapters accept cray-like results structurally, without a cray dependency.
+// Error conversion preserves BerylxError values, wraps Error instances with their
+// name and cause, uses strings as error codes, and assigns cray_failure otherwise.
+// Wrapped values remain available in metadata.crayError.
 
 import { Ok, Err, ResultOps, type Result } from './result.js';
 import { Focus } from './focus.js';
 import { BerylxError } from './error.js';
 
-/** cray の Success 相当 (成功値 value を運ぶ)。 */
+/** A cray-compatible success result carrying a value. */
 export class CraySuccess<T = unknown> {
   readonly value: T;
 
@@ -36,7 +24,7 @@ export class CraySuccess<T = unknown> {
   }
 }
 
-/** cray の Failure 相当 (任意型のエラー error を運ぶ)。 */
+/** A cray-compatible failure result carrying an error of any type. */
 export class CrayFailure<E = unknown> {
   readonly error: E;
 
@@ -55,13 +43,12 @@ export class CrayFailure<E = unknown> {
 
 export type CrayResult<T = unknown, E = unknown> = CraySuccess<T> | CrayFailure<E>;
 
-/** Ruby module 相当の smart constructor。 */
 export const Cray = {
   success: <T>(value: T): CraySuccess<T> => new CraySuccess(value),
   failure: <E>(error: E): CrayFailure<E> => new CrayFailure(error),
 };
 
-/** 任意の cray 風オブジェクトが成功かを構造的に判定する。 */
+/** Recognize success using the structure of a cray-like result. */
 function craySucceeded(result: unknown): boolean {
   if (result instanceof CraySuccess) {
     return true;
@@ -88,11 +75,10 @@ function craySucceeded(result: unknown): boolean {
   if ('tag' in r) {
     return r.tag === 'success' || r.tag === 'ok' || r.tag === 'right';
   }
-  // value を持ち error を持たないなら成功とみなす。
   return 'value' in r && !('error' in r);
 }
 
-/** cray の任意型エラー E を BerylxError に畳んで Err を作る。 */
+/** Convert an arbitrary cray error into an Err carrying a BerylxError. */
 function foldCrayError(error: unknown, focus?: unknown): Err {
   const f = ResultOps.coerceFocus(focus ?? {});
   if (error instanceof BerylxError) {
@@ -111,9 +97,9 @@ function foldCrayError(error: unknown, focus?: unknown): Err {
 }
 
 /**
- * cray Success/Failure → berylx Ok/Err。成功は value を Focus に強制変換して Ok に、
- * 失敗は error を BerylxError へ畳んで Err にする。focus は失敗時の部分状態の
- * フォールバック (成功時は value 由来の Focus を優先する)。
+ * Convert cray Success/Failure to berylx Ok/Err. Success values become Focus
+ * instances; failures become structured BerylxError values. The optional focus
+ * supplies partial state on failure and a fallback for an undefined success value.
  */
 export function fromCrayResult(result: unknown, focus?: unknown): Result {
   if (craySucceeded(result)) {
@@ -128,8 +114,8 @@ export function fromCrayResult(result: unknown, focus?: unknown): Result {
 }
 
 /**
- * berylx Ok/Err → cray Success/Failure。Ok は焦点の生値を Success に、Err は
- * 構造化 BerylxError を Failure に載せる (消費側は code/message/metadata を読める)。
+ * Convert berylx Ok/Err to cray Success/Failure. Success carries the root state;
+ * failure carries the BerylxError, preserving its code, message, and metadata.
  */
 export function toCrayResult(result: Result): CrayResult {
   if (result instanceof Ok) {

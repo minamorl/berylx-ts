@@ -1,16 +1,5 @@
-// ==================================================================
-// Berylx EffectTree (async interpreter) — workflow を darkcore の非同期
-// トランポリン (foldAsync) で走らせる圏。
-//
-// フェーズ 3-a: 同期の real interpreter (index.ts / combinators.ts) と同じ
-// Effect 木・同じ berylx 圏の algebra (短絡・merge・回復) を共有し、Task の実行
-// だけを await 対応にする。AsyncTask は callAsync で、通常 Task は同期 call で
-// 実行する (混在可)。Parallel は Promise.allSettled で全 branch を待ち、
-// short_circuit / accumulate / reducer merge は同期版の helper を再利用する。
-//
-// 既存の同期経路 (run / realHandlers) は一切変更しない。async はあくまで
-// handler マップ差し替えで後付けする aspect (spec: aspect_via_handler)。
-// ==================================================================
+// Interpret the same Effect trees with async handlers, supporting mixed Task
+// and AsyncTask nodes and reusing synchronous merge and failure semantics.
 
 import * as Darkcore from '../darkcore.js';
 import { ResultOps, Ok, Err, type Result } from '../result.js';
@@ -46,15 +35,14 @@ export type AsyncAroundWrapper = (
 ) => unknown | Promise<unknown>;
 
 /**
- * async 実実行の handler マップ: Task/AsyncTask を実行し、合成子は非同期副木として
- * 実行しつつ berylx 圏の algebra で結果封筒を合成する。合成子 handler は自分自身
- * (asyncRealHandlers) を副木実行に渡すため、木は同じ async 圏のまま再帰する。
+ * Create handlers for Task, AsyncTask, and asynchronous combinators. Subtrees
+ * and recovery inherit the supplied subtree map, or this map itself.
  */
 export function asyncRealHandlers(
   effects: Darkcore.AsyncHandlerMap = {},
   subtree?: Darkcore.AsyncHandlerMap,
 ): Darkcore.AsyncHandlerMap {
-  // index.ts との循環 import があるため、live binding は呼出時に読む。
+  // Read live bindings at call time because index.ts participates in a circular import.
   const reservedTags = [TASK, PARALLEL, BRANCH, RESCUE, RECOVER];
   const collisions = Object.keys(effects).filter((tag) =>
     reservedTags.includes(tag),
@@ -87,7 +75,7 @@ export function asyncRealHandlers(
   return handlers;
 }
 
-/** async handler を aspect で包み、包んだ map 自身を副木と回復へ伝播させる。 */
+/** Wrap async handlers and propagate the wrapped map to subtrees and recovery. */
 export function aroundAsync(
   effects: Darkcore.AsyncHandlerMap = {},
   wrapper?: AsyncAroundWrapper,
@@ -104,10 +92,7 @@ export function aroundAsync(
   return wrapped;
 }
 
-/**
- * runAsync — workflow 本体 (Effect 木) を darkcore の非同期トランポリンで走らせる。
- * 戻り値は berylx の結果封筒 Ok(lay) / Err(partial_lay, error) の Promise。
- */
+/** Interpret a workflow asynchronously and return its berylx result. */
 export function runAsync(
   node: BerylxNode,
   focus: unknown,
@@ -116,7 +101,7 @@ export function runAsync(
   return Darkcore.foldAsync(build(node, ResultOps.coerceFocus(focus)), (x) => x, handlers);
 }
 
-/** 非同期副木実行ヘルパ (合成子 handler が枝の実行に使う)。 */
+/** Interpret a subtree asynchronously using the supplied handlers. */
 export function runSubtreeAsync(
   node: BerylxNode,
   focus: Focus,
@@ -138,9 +123,9 @@ async function asyncRealTask(
 }
 
 /**
- * async Parallel — 全 branch を同時開始し、Promise.allSettled で全てを待つ。
- * rejection は型を問わず branch 順の最初を待機後に再送出し、rejection が無い
- * ときだけ通常の失敗合成と reducer merge に同期版の algebra を再利用する。
+ * Start every branch concurrently and wait for all to settle. Rethrow the first
+ * rejection in branch order, regardless of its type. When none rejects, apply
+ * the same failure and merge rules as the synchronous interpreter.
  */
 export async function runParallelAsync(
   node: Parallel,
@@ -169,7 +154,7 @@ export async function runParallelAsync(
   return ResultOps.ok(merged);
 }
 
-/** async Branch — predicate 評価は純粋なので同期、match した arm を非同期実行する。 */
+/** Evaluate predicates synchronously, then run the first matching arm asynchronously. */
 export async function runBranchAsync(
   node: Branch,
   focus: Focus,
@@ -182,7 +167,7 @@ export async function runBranchAsync(
   return runSubtreeAsync(arm.body, focus, handlers);
 }
 
-/** async Rescue — body を非同期実行し、Err なら回復 handler (async 対応) で差し替える。 */
+/** Run the body asynchronously, dispatching recovery only for Err results. */
 export async function runRescueAsync(
   node: Rescue,
   focus: Focus,
@@ -195,7 +180,7 @@ export async function runRescueAsync(
   return dispatchRecoverAsync(node, result, handlers);
 }
 
-/** Rescue の回復を現在の async handler map へ RECOVER effect として発行する。 */
+/** Dispatch RECOVER through the current asynchronous handler map. */
 export function dispatchRecoverAsync(
   node: Rescue,
   errorResult: Err,
@@ -209,9 +194,8 @@ export function dispatchRecoverAsync(
 }
 
 /**
- * RECOVER の async real interpreter。RescueBlock は Perform とともに呼び、Task /
- * AsyncTask handler は同じ async handler map の副木として走らせる。handler が Err を
- * 返したら回復失敗として元エラーを metadata に畳む (同期版と同一)。
+ * Interpret recovery with Perform for blocks and the same async handler map for
+ * Task/AsyncTask subtrees. Failed recovery retains the original error in metadata.
  */
 export async function realRecoverAsync(
   node: Rescue | Catch,
