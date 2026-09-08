@@ -2,8 +2,6 @@
 
 **Composable, inspectable workflows with immutable state and recoverable failures.**
 
-Read the [introduction](https://berylx.niktseft.chatgpt.site) for a guided tour.
-
 Berylx is a TypeScript port of the Ruby [berylx](https://github.com/minamorl/berylx)
 gem. It gives multistep workflows a small set of building blocks: named tasks,
 sequences, branches, parallel composition, and recovery handlers.
