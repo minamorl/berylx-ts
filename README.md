@@ -27,9 +27,7 @@ Install the published package from npm:
 pnpm add @minamorl/berylx
 ```
 
-The latest published release is `0.2.0`. This README describes the current `0.3.0`
-source, which includes unreleased changes. To use the APIs shown here, follow the
-[source setup](#development).
+The examples in this README use the `0.3.0` API.
 
 The package uses ES modules, includes TypeScript declarations, and requires Node.js
 18 or later.

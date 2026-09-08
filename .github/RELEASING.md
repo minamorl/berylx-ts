@@ -25,9 +25,9 @@ open a version pull request.
 first run as an initial release and takes the version from `initial-version` in
 `release-please-config.json`, which is `0.3.0`.
 
-That reconciles the two versions that are currently out of step: the source tree
-is already at `0.3.0`, while the latest release on npm is `0.2.0`. The first CI
-release publishes `0.3.0`, after which the repository and the registry agree.
+The first CI release therefore publishes `0.3.0`. The previous npm release was
+`0.2.0`, so this initial automated release brings the registry into line with
+the source tree.
 
 Because `chore:` does not open a version pull request, the commit that adds this
 release automation should be a releasable one, for example:
