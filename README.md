@@ -6,6 +6,9 @@ Berylx is a TypeScript port of the Ruby [berylx](https://github.com/minamorl/ber
 gem. It gives multistep workflows a small set of building blocks: named tasks,
 sequences, branches, parallel composition, and recovery handlers.
 
+Documentation, including a detailed introduction and runnable examples, lives at
+[https://lib.minamorl.com/berylx/](https://lib.minamorl.com/berylx/).
+
 Each task receives a `Focus` (also called `Lay`) and produces a result:
 
 ```text
