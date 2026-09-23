@@ -5,7 +5,13 @@
       "release-type": "node",
       "package-name": "@minamorl/berylx",
       "include-component-in-tag": false,
-      "initial-version": "0.3.0"
+      "initial-version": "0.3.0",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "src/index.ts"
+        }
+      ]
     }
   }
 }
