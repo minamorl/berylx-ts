@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/minamorl/berylx-ts/compare/v0.3.0...v0.3.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* report the package version from VERSION ([#8](https://github.com/minamorl/berylx-ts/issues/8)) ([22933e4](https://github.com/minamorl/berylx-ts/commit/22933e4089b265e4cf412c24edc6b5bb7df0b6cd))
+
 ## 0.3.0 (2026-09-08)
 
 

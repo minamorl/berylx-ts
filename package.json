@@ -1,6 +1,6 @@
 {
   "name": "@minamorl/berylx",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Graphable TypeScript workflows over focused, recoverable state.",
   "type": "module",
   "main": "dist/index.js",
