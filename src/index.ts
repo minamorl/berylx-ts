@@ -28,6 +28,31 @@ export {
 export { Workflow } from './workflow.js';
 export { berylx, type Berylx } from './scoped.js';
 export { Graph } from './graph.js';
+export {
+  Timeline,
+  ExecutablePlan,
+  KeyframeTrack,
+  TimelineError,
+  predicates as timelinePredicates,
+  type Clock,
+  type BeatOrigin,
+  type CalendarOrigin,
+  type CronField,
+  type CronSelection,
+  type ResolvedCronSelection,
+  type Observation,
+  type Predicate as TimelinePredicate,
+  type TaskKind as TimelineTaskKind,
+  type TaskRef as TimelineTaskRef,
+  type TaskState as TimelineTaskState,
+  type TimelineEvent,
+} from './timeline.js';
+export {
+  BERYLX_HUMAN_LOGIN,
+  BerylxTimeline,
+  BerylxTimelinePlan,
+  waitForHumanLogin,
+} from './timeline/berylx.js';
 
 // Effect interpreter
 export { EffectTree, type DryRun } from './effect-tree/index.js';
