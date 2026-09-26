@@ -10,6 +10,7 @@
     "LICENSE",
     "MIGRATION.md",
     "README.md",
+    "docs",
     "dist",
     "src"
   ],
@@ -17,6 +18,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./timeline": {
+      "types": "./dist/timeline.d.ts",
+      "import": "./dist/timeline.js"
+    },
+    "./timeline/berylx": {
+      "types": "./dist/timeline/berylx.d.ts",
+      "import": "./dist/timeline/berylx.js"
     }
   },
   "repository": {

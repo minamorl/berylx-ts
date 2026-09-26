@@ -30,7 +30,8 @@ Install the published package from npm:
 pnpm add @minamorl/berylx
 ```
 
-The examples in this README use the `0.3.0` API.
+The examples in this repository track the current source tree and may describe
+APIs that are not yet available in the published package.
 
 The package uses ES modules, includes TypeScript declarations, and requires Node.js
 18 or later.
@@ -243,6 +244,40 @@ Synchronous and asynchronous tasks can share a workflow. The asynchronous
 interpreter starts parallel branches together and waits for them all to settle
 before combining results. `EffectTree.runAsync()` returns a result; it does not
 commit to a `Root` automatically.
+
+## Timeline
+
+The optional Timeline API coordinates time-based events, human work, and AI or
+Berylx tasks in one in-memory execution plan. A `Clock` only supplies the current
+time; a `Timeline` owns the plan, observations, task states, and scheduling. Call
+`issue()` to snapshot the plan, then `start()` to begin it. Applications that
+advance an external clock must call `advance()` explicitly.
+
+```ts
+import { Timeline, predicates, type Clock } from "@minamorl/berylx/timeline";
+
+class ManualClock implements Clock {
+  constructor(public current: Date) {}
+  now(): Date { return this.current; }
+}
+
+const clock = new ManualClock(new Date("2026-09-26T00:00:00Z"));
+const timeline = Timeline.forExecution({}, clock);
+const approval = timeline.user("approve");
+timeline.ai("publish", () => console.log("published"),
+  predicates.completed(approval));
+
+const plan = timeline.issue();
+await plan.start();
+await plan.emit({ type: "human-completed", task: approval });
+```
+
+Use one Timeline Root for each execution token. Predicates can inspect event and
+task state, while beat positions, UTC calendar/cron selectors, and numeric
+keyframes cover time-driven work. The Berylx adapter lets an `AsyncTask` wait for
+a human login without blocking unrelated ready work. Events must never contain
+credentials. See [Timeline](docs/timeline.md) for the execution model, examples,
+errors, concurrency behavior, and in-memory lifetime.
 
 ## Dry runs and graphs
 
