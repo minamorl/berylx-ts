@@ -258,14 +258,19 @@ import { Timeline, predicates, type Clock } from "@minamorl/berylx/timeline";
 
 class ManualClock implements Clock {
   constructor(public current: Date) {}
-  now(): Date { return this.current; }
+  now(): Date {
+    return this.current;
+  }
 }
 
 const clock = new ManualClock(new Date("2026-09-26T00:00:00Z"));
 const timeline = Timeline.forExecution({}, clock);
 const approval = timeline.user("approve");
-timeline.ai("publish", () => console.log("published"),
-  predicates.completed(approval));
+timeline.ai(
+  "publish",
+  () => console.log("published"),
+  predicates.completed(approval),
+);
 
 const plan = timeline.issue();
 await plan.start();
