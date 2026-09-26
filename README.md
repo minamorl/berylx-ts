@@ -34,7 +34,20 @@ The examples in this repository track the current source tree and may describe
 APIs that are not yet available in the published package.
 
 The package uses ES modules, includes TypeScript declarations, and requires Node.js
-18 or later.
+18 or later for the default entry.
+
+For browser applications, import the browser entry (ES2022; no Node polyfills
+required):
+
+```ts
+import { berylx, Darkcore, Timeline } from "@minamorl/berylx/browser";
+```
+
+This entry includes the workflow, effect interpreter, and Timeline APIs. Its
+`Darkcore` namespace contains the platform-neutral effect and monad APIs; Node IO
+exports from `darkcore/io-effects` (including file, process, console, and shell
+handlers) are omitted. The default `@minamorl/berylx` entry continues to expose the
+complete Node API.
 
 ## Quick start
 

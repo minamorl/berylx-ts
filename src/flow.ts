@@ -2,7 +2,7 @@ import { ResultOps, type Result } from './result.js';
 import { Focus } from './focus.js';
 import type { BerylxNode } from './node.js';
 import { EffectTree } from './effect-tree/index.js';
-import type { HandlerMap } from './darkcore.js';
+import type { HandlerMap } from './darkcore/browser.js';
 
 export class Flow<S = any> {
   readonly focus: Focus<S, []>;

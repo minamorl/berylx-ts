@@ -4,7 +4,7 @@ import type { BerylxNode } from './node.js';
 import { Root } from './root.js';
 import { Flow } from './flow.js';
 import { EffectTree } from './effect-tree/index.js';
-import type { HandlerMap } from './darkcore.js';
+import type { HandlerMap } from './darkcore/browser.js';
 
 type Nodeish<S = any> = BerylxNode<S>;
 

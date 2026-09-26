@@ -26,6 +26,10 @@
     "./timeline/berylx": {
       "types": "./dist/timeline/berylx.d.ts",
       "import": "./dist/timeline/berylx.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
     }
   },
   "repository": {
@@ -66,6 +70,7 @@
   "license": "MIT",
   "devDependencies": {
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "esbuild": "^0.21.5"
   }
 }

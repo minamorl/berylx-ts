@@ -4,7 +4,7 @@ import { Merge } from './merge.js';
 import type { BerylxNode } from './node.js';
 import { State } from './state.js';
 import { EffectTree } from './effect-tree/index.js';
-import type { HandlerMap } from './darkcore.js';
+import type { HandlerMap } from './darkcore/browser.js';
 
 /** Events delivered to Root subscribers. */
 export type RootEvent =
