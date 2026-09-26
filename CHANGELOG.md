@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/minamorl/berylx-ts/compare/v0.3.1...v0.4.0) (2026-09-26)
+
+
+### Features
+
+* add Timeline execution layer ([#10](https://github.com/minamorl/berylx-ts/issues/10)) ([5fb3dad](https://github.com/minamorl/berylx-ts/commit/5fb3dada0d1aa0524eaed6137c571c28d8af0c1d))
+
 ## [0.3.1](https://github.com/minamorl/berylx-ts/compare/v0.3.0...v0.3.1) (2026-09-23)
 
 

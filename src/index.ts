@@ -1,4 +1,4 @@
-export const VERSION = '0.3.1'; // x-release-please-version
+export const VERSION = '0.4.0'; // x-release-please-version
 
 // Core state and execution
 export { BerylxError, type BerylxErrorContext } from './error.js';
