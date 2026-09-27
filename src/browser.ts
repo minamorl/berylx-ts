@@ -4,7 +4,7 @@ export { VERSION } from './version.js';
 export { BerylxError, type BerylxErrorContext } from './error.js';
 export { Ok, Err, ResultOps, type Result, type Callable } from './result.js';
 export { Focus, KeyError, type PathKey, type PathAt, type KeysAt } from './focus.js';
-export { Root, type RootEvent } from './root.js';
+export { Root, type RootEvent, type RootOptions } from './root.js';
 export { Flow } from './flow.js';
 export { State } from './state.js';
 export { Merge, type Reducer } from './merge.js';

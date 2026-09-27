@@ -87,6 +87,14 @@ through `root.pipe(workflow)` commits once, after the sequence succeeds. If it
 returns `Err`, the root keeps its previously committed state and the result retains
 the partial state.
 
+Each commit is also appended to `root.history`, which by default keeps every
+commit for the life of the root. Long-running hosts that commit often, such as a
+browser UI committing on every drag event, can bound it with `historyLimit`:
+`b.root(initial, { historyLimit: 100 })` or `Root.of(initial, { historyLimit: 100 })`
+keeps only the 100 most recent commit events, oldest first, and `historyLimit: 0`
+keeps none. The limit only trims `history`; committed state, `subscribe`, and
+`attachRoot` receive every commit either way.
+
 ## Working with state
 
 `Focus<S, P>` tracks both the root state type `S` and the current path `P`.
