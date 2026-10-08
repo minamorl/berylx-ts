@@ -1,4 +1,4 @@
-import * as Darkcore from '../darkcore.js';
+import * as Darkcore from '../darkcore/browser.js';
 import { ResultOps } from '../result.js';
 import { Focus } from '../focus.js';
 import type { Parallel } from '../parallel.js';

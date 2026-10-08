@@ -1,6 +1,6 @@
 import { Focus } from './focus.js';
 import { Flow } from './flow.js';
-import { Root } from './root.js';
+import { Root, type RootOptions } from './root.js';
 import { State } from './state.js';
 import { Task, type TaskBlock } from './task.js';
 import { AsyncTask, type AsyncTaskBlock } from './async-task.js';
@@ -22,7 +22,7 @@ export interface Berylx<S> {
   /** Alias for focus. */
   lay(value: S): Focus<S, []>;
   flow(value: S | Focus<S, []>): Flow<S>;
-  root(value: S): Root<S>;
+  root(value: S, options?: RootOptions): Root<S>;
   state(value: S): State<S>;
 }
 
@@ -47,7 +47,7 @@ export function berylx<S>(): Berylx<S> {
     focus: (value) => Focus.of<S>(value),
     lay: (value) => Focus.of<S>(value),
     flow: (value) => Flow.of(value as S) as Flow<S>,
-    root: (value) => Root.of<S>(value),
+    root: (value, options) => Root.of<S>(value, options),
     state: (value) => State.of<S>(value),
   };
 }

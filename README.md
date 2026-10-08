@@ -34,7 +34,20 @@ The examples in this repository track the current source tree and may describe
 APIs that are not yet available in the published package.
 
 The package uses ES modules, includes TypeScript declarations, and requires Node.js
-18 or later.
+18 or later for the default entry.
+
+For browser applications, import the browser entry (ES2022; no Node polyfills
+required):
+
+```ts
+import { berylx, Darkcore, Timeline } from "@minamorl/berylx/browser";
+```
+
+This entry includes the workflow, effect interpreter, and Timeline APIs. Its
+`Darkcore` namespace contains the platform-neutral effect and monad APIs; Node IO
+exports from `darkcore/io-effects` (including file, process, console, and shell
+handlers) are omitted. The default `@minamorl/berylx` entry continues to expose the
+complete Node API.
 
 ## Quick start
 
@@ -73,6 +86,14 @@ root.state();
 through `root.pipe(workflow)` commits once, after the sequence succeeds. If it
 returns `Err`, the root keeps its previously committed state and the result retains
 the partial state.
+
+Each commit is also appended to `root.history`, which by default keeps every
+commit for the life of the root. Long-running hosts that commit often, such as a
+browser UI committing on every drag event, can bound it with `historyLimit`:
+`b.root(initial, { historyLimit: 100 })` or `Root.of(initial, { historyLimit: 100 })`
+keeps only the 100 most recent commit events, oldest first, and `historyLimit: 0`
+keeps none. The limit only trims `history`; committed state, `subscribe`, and
+`attachRoot` receive every commit either way.
 
 ## Working with state
 

@@ -1,4 +1,4 @@
-import { PURE, type HandlerMap } from './darkcore.js';
+import { PURE, type HandlerMap } from './darkcore/browser.js';
 
 /** Dispatch effects from tasks and recovery callbacks to the current handler map. */
 export class Perform {
