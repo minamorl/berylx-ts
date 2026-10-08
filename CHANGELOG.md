@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0](https://github.com/minamorl/berylx-ts/compare/v0.3.1...v0.4.0) (2026-10-08)
+
+
+### Features
+
+* add browser-safe ./browser entry ([bff73ff](https://github.com/minamorl/berylx-ts/commit/bff73ff2f08fd6528b5a8d60539e4be40f58b405))
+* add Timeline execution layer ([#10](https://github.com/minamorl/berylx-ts/issues/10)) ([5fb3dad](https://github.com/minamorl/berylx-ts/commit/5fb3dada0d1aa0524eaed6137c571c28d8af0c1d))
+* bound Root history with a historyLimit option ([39c187e](https://github.com/minamorl/berylx-ts/commit/39c187ea7d7a019362ac9f0f830ba67da89c345b))
+
 ## [0.3.1](https://github.com/minamorl/berylx-ts/compare/v0.3.0...v0.3.1) (2026-09-23)
 
 
