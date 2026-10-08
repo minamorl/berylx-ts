@@ -1,7 +1,7 @@
 // Interpret the same Effect trees with async handlers, supporting mixed Task
 // and AsyncTask nodes and reusing synchronous merge and failure semantics.
 
-import * as Darkcore from '../darkcore.js';
+import * as Darkcore from '../darkcore/browser.js';
 import { ResultOps, Ok, Err, type Result } from '../result.js';
 import { Focus } from '../focus.js';
 import { Task } from '../task.js';

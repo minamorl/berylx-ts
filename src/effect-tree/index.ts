@@ -2,7 +2,7 @@
 // dry-run, or other aspects; continuations provide berylx result semantics.
 // Darkcore.bind only joins structure and does not interpret Ok/Err results.
 
-import * as Darkcore from '../darkcore.js';
+import * as Darkcore from '../darkcore/browser.js';
 import { ResultOps, Ok, Err, type Result } from '../result.js';
 import { Focus } from '../focus.js';
 import { Task } from '../task.js';

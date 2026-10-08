@@ -14,6 +14,7 @@ import {
   Ok,
   Err,
   type Result,
+  type RootOptions,
 } from '../../src/index.js';
 
 interface Order {
@@ -138,3 +139,12 @@ export {
   untypedTask, untypedResult, untypedWhen,
   wrongType,
 };
+
+// Root accepts an optional history limit from both factories.
+const limitOptions: RootOptions = { historyLimit: 10 };
+const limited: Root<Order> = b.root(base, limitOptions);
+const historyless: Root<Order> = Root.of(base, { historyLimit: 0 });
+void limited;
+void historyless;
+// @ts-expect-error historyLimit must be a number.
+Root.of(base, { historyLimit: '10' });

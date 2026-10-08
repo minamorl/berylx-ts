@@ -1,7 +1,7 @@
 // Combinator interpreters supply berylx semantics: short-circuiting, merging,
 // recovery, and error context. Darkcore.bind only joins the effect-tree structure.
 
-import * as Darkcore from '../darkcore.js';
+import * as Darkcore from '../darkcore/browser.js';
 import { ResultOps, Ok, Err, type Result } from '../result.js';
 import { BerylxError } from '../error.js';
 import { Focus } from '../focus.js';

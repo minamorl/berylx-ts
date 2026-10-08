@@ -1,4 +1,4 @@
-import type { AsyncHandlerMap } from '../darkcore.js';
+import type { AsyncHandlerMap } from '../darkcore/browser.js';
 import { EffectTree } from '../effect-tree/index.js';
 import type { BerylxNode } from '../node.js';
 import { BerylxError } from '../error.js';
