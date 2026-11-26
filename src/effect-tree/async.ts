@@ -123,7 +123,7 @@ async function asyncRealTask(
 }
 
 /**
- * Start every branch concurrently and wait for all to settle. Rethrow the first
+ * Start branches up to the configured limit and wait for all to settle. Rethrow the first
  * rejection in branch order, regardless of its type. When none rejects, apply
  * the same failure and merge rules as the synchronous interpreter.
  */
@@ -132,9 +132,63 @@ export async function runParallelAsync(
   focus: Focus,
   handlers: Darkcore.AsyncHandlerMap,
 ): Promise<Result> {
-  const settled = await Promise.allSettled(
-    node.branches.map((branch) => runSubtreeAsync(branch, focus, handlers)),
-  );
+  if (node.branches.some((branch) => branch instanceof Parallel)) {
+    return finishParallel(node, focus, await settleParallelGroup(node, focus, handlers));
+  }
+  if (node.workerLimit === undefined) {
+    const settled = await Promise.allSettled(
+      node.branches.map((branch) => runSubtreeAsync(branch, focus, handlers)),
+    );
+    return finishParallel(node, focus, settled);
+  }
+  const settled: PromiseSettledResult<Result>[] = new Array(node.branches.length);
+  let next = 0;
+  const runWorker = async () => {
+    while (next < node.branches.length) {
+      const index = next++;
+      try {
+        settled[index] = { status: 'fulfilled', value: await runSubtreeAsync(node.branches[index], focus, handlers) };
+      } catch (reason) {
+        settled[index] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(node.workerLimit, node.branches.length) },
+    () => runWorker(),
+  ));
+  return finishParallel(node, focus, settled);
+}
+
+/** Keep nested limits as scheduling boundaries, while folding leaf results at the outer node. */
+async function settleParallelGroup(
+  node: Parallel,
+  focus: Focus,
+  handlers: Darkcore.AsyncHandlerMap,
+): Promise<PromiseSettledResult<Result>[]> {
+  const groups: PromiseSettledResult<Result>[][] = new Array(node.branches.length);
+  let next = 0;
+  const runWorker = async () => {
+    while (next < node.branches.length) {
+      const index = next++;
+      const branch = node.branches[index];
+      try {
+        groups[index] = branch instanceof Parallel
+          ? await settleParallelGroup(branch, focus, handlers)
+          : [{ status: 'fulfilled', value: await runSubtreeAsync(branch, focus, handlers) }];
+      } catch (reason) {
+        groups[index] = [{ status: 'rejected', reason }];
+      }
+    }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(node.workerLimit ?? node.branches.length, node.branches.length) },
+    () => runWorker(),
+  ));
+  return groups.flat();
+}
+
+function finishParallel(node: Parallel, focus: Focus, settled: PromiseSettledResult<Result>[]): Result {
   const branchResults = settled.map((entry) => {
     if (entry.status === 'rejected') {
       throw entry.reason;

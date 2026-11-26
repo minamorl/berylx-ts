@@ -23,21 +23,29 @@ export class Parallel<S = any> implements BerylxNode<S> {
   readonly branches: readonly BerylxNode<S>[];
   readonly reducer: Reducer<S>;
   readonly onErr: ParallelOnErr;
+  readonly workerLimit: number | undefined;
 
   constructor(
     branches: BerylxNode<S>[],
     reducer: Reducer<S> = Merge.strict<S>(),
     onErr: ParallelOnErr = 'short_circuit',
+    workerLimit?: number,
   ) {
+    if (workerLimit !== undefined && (!Number.isInteger(workerLimit) || workerLimit < 1)) {
+      throw new RangeError('workers must be a positive integer');
+    }
     this.branches = Object.freeze(
-      branches.flatMap((b) => (b instanceof Parallel ? [...b.branches] : [b])),
+      branches.flatMap((b) => (b instanceof Parallel && b.workerLimit === undefined ? [...b.branches] : [b])),
     );
     this.reducer = reducer;
     this.onErr = onErr;
+    this.workerLimit = workerLimit;
   }
 
-  par(other: BerylxNode<S>): BerylxNode<S> {
-    return new Parallel<S>([...this.branches, other], this.reducer, this.onErr);
+  par(other: BerylxNode<S>): Parallel<S> {
+    return this.workerLimit === undefined
+      ? new Parallel<S>([...this.branches, other], this.reducer, this.onErr)
+      : new Parallel<S>([this, other], this.reducer, this.onErr);
   }
 
   then(other: BerylxNode<S>): BerylxNode<S> {
@@ -45,15 +53,22 @@ export class Parallel<S = any> implements BerylxNode<S> {
   }
 
   reduce(reducer: Reducer<S>): Parallel<S> {
-    return new Parallel<S>([...this.branches], reducer, this.onErr);
+    return new Parallel<S>([...this.branches], reducer, this.onErr, this.workerLimit);
+  }
+
+  workers(count: number): Parallel<S> {
+    if (!Number.isInteger(count) || count < 1) {
+      throw new RangeError('workers must be a positive integer');
+    }
+    return new Parallel<S>([...this.branches], this.reducer, this.onErr, count);
   }
 
   shortCircuit(): Parallel<S> {
-    return new Parallel<S>([...this.branches], this.reducer, 'short_circuit');
+    return new Parallel<S>([...this.branches], this.reducer, 'short_circuit', this.workerLimit);
   }
 
   accumulate(): Parallel<S> {
-    return new Parallel<S>([...this.branches], this.reducer, 'accumulate');
+    return new Parallel<S>([...this.branches], this.reducer, 'accumulate', this.workerLimit);
   }
 
   rescueWith(
