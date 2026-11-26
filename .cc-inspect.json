@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "kind": "library",
+  "condition_id": "artifact_inspect",
+  "description": "Build @minamorl/berylx npm tarball from clean commit and verify install, ESM imports, and workflow execution in an isolated directory",
+  "build": [
+    "npm ci",
+    "npm run build",
+    "npm pack --pack-destination \"$CC_INSPECT_ARTIFACT_DIR\""
+  ],
+  "smoke": [
+    "npm init -y >/dev/null",
+    "npm install --no-audit --no-fund \"$CC_INSPECT_ARTIFACT_DIR\"/*.tgz",
+    "node --input-type=module -e 'import assert from \"node:assert/strict\"; import { berylx, Workflow, Graph, VERSION } from \"@minamorl/berylx\"; import { berylx as browserBerylx } from \"@minamorl/berylx/browser\"; import { Timeline } from \"@minamorl/berylx/timeline\"; import { BerylxTimeline } from \"@minamorl/berylx/timeline/berylx\"; assert.equal(typeof VERSION, \"string\"); assert.ok(VERSION.length > 0); assert.equal(typeof browserBerylx, \"function\"); assert.equal(typeof Timeline, \"function\"); assert.equal(typeof BerylxTimeline, \"function\"); const b = berylx(); const trim = b.task(\"trim\", (f) => f.at(\"name\").update((s) => s.trim())); const greet = b.task(\"greet\", (f) => f.at(\"greeting\").set(`Hello, ${f.at(\"name\").get()}!`)); const workflow = trim.then(greet); const root = b.root({ name: \"  Mina  \", greeting: \"\" }); const res = root.pipe(workflow); assert.equal(res.isOk(), true); assert.deepEqual(res.focus.toObject(), { name: \"Mina\", greeting: \"Hello, Mina!\" }); assert.deepEqual(root.state(), { name: \"Mina\", greeting: \"Hello, Mina!\" }); const wfRes = Workflow.of(\"greet_wf\", () => workflow).call({ name: \"  Mina  \", greeting: \"\" }); assert.equal(wfRes.isOk(), true); assert.deepEqual(wfRes.focus.toObject(), { name: \"Mina\", greeting: \"Hello, Mina!\" }); assert.deepEqual(Graph.from(workflow).nodes(), [\"trim\", \"greet\"]); console.log(\"BERYLX_SMOKE_OK\", VERSION);'"
+  ]
+}
