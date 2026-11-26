@@ -195,6 +195,22 @@ const rightBiased = new Parallel([setA, setB]).reduce(Merge.deep());
 `Parallel` defaults to `short_circuit` error handling. Use `.accumulate()` on a
 `Parallel` instance to collect branch failures in `parallelErrors`.
 
+Use `a.par(b).par(c).workers(2)` to limit the number of branches running at
+once in the asynchronous interpreter. The argument must be a positive integer;
+the default has no limit. Every branch still starts from the same snapshot and
+finishes, even in `short_circuit` mode. Results and errors are folded in branch
+declaration order. The synchronous interpreter continues to run branches in
+order, so the limit does not change its execution.
+
+A limited parallel node remains a single branch when nested in another parallel
+node. Limits apply separately at each level: for example, an outer limit of 2
+and an inner limit of 3 can run up to 6 inner branches concurrently. There is no
+shared global worker pool. The synchronous interpreter flattens nested parallel
+branches for execution, preserving the behavior without limits. See
+[parallel execution](docs/parallel.md).
+The constructor form `new Parallel([a, b, c]).workers(2)` is also available.
+See the linked guide for construction errors.
+
 ## Failures and recovery
 
 Return `focus.reject(code, message)` to fail with partial state. Task exceptions
@@ -261,9 +277,9 @@ const result = await EffectTree.runAsync(loadName.par(loadTotal), {
 result.focus.toObject(); // { name: 'Mina', total: 42 }
 ```
 
-Synchronous and asynchronous tasks can share a workflow. The asynchronous
-interpreter starts parallel branches together and waits for them all to settle
-before combining results. `EffectTree.runAsync()` returns a result; it does not
+Synchronous and asynchronous tasks can share a workflow. Without a worker
+limit, the asynchronous interpreter starts parallel branches together. It waits
+for them all to settle before combining results. `EffectTree.runAsync()` returns a result; it does not
 commit to a `Root` automatically.
 
 ## Timeline

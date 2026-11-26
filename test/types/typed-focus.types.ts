@@ -4,6 +4,8 @@
 
 import {
   berylx,
+  task,
+  Parallel,
   Focus,
   Task,
   Flow,
@@ -15,7 +17,20 @@ import {
   Err,
   type Result,
   type RootOptions,
+  type BerylxNode,
+  type Berylx,
+  type TaskBlock,
+  AsyncTask,
+  type AsyncTaskBlock,
 } from '../../src/index.js';
+
+class ExistingTask<S> extends Task<S> {
+  static override of<S>(name: string, block: TaskBlock<S>): Task<S> { return new Task(name, block); }
+}
+class ExistingAsyncTask<S> extends AsyncTask<S> {
+  static override of<S>(name: string, block: AsyncTaskBlock<S>): AsyncTask<S> { return new AsyncTask(name, block); }
+}
+const compatibleFactory = (original: Berylx<Order>): Berylx<Order> => ({ ...original, task: (name, block) => Task.of(name, block) });
 
 interface Order {
   user: { name: string; age: number };
@@ -64,6 +79,10 @@ const markPaid = b.task('markPaid', (focus) => focus.at('status').set('paid'));
 // Composition preserves the same state type.
 const seq = strip.then(bump);
 const par = strip.par(bump);
+task<Order>('typed-workers', (f) => f).par(bump).par(strip).workers(2);
+new Parallel([bump, strip]).par(bump).workers(2).reduce(Merge.strict<Order>()).accumulate();
+let legacyTask = task('first', (f) => f);
+legacyTask = Task.of('second', (f) => f);
 const branch = b.when('isPaid', (focus) => focus.at('status').get() === 'paid').then(markPaid);
 const branchWithElse = branch.or(Else.then(bump));
 const rescued = seq.rescueWith(bump);

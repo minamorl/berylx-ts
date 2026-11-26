@@ -63,7 +63,7 @@ export class AsyncTask<S = any> implements BerylxNode<S>, NamedNode {
     return new Sequence<S>([this, other]);
   }
 
-  par(other: BerylxNode<S>): BerylxNode<S> {
+  par(other: BerylxNode<S>): Parallel<S> {
     return new Parallel<S>([this, other]);
   }
 

@@ -5,7 +5,8 @@ import * as Darkcore from '../darkcore/browser.js';
 import { ResultOps, Ok, Err, type Result } from '../result.js';
 import { BerylxError } from '../error.js';
 import { Focus } from '../focus.js';
-import type { Parallel } from '../parallel.js';
+import { Parallel } from '../parallel.js';
+import type { BerylxNode } from '../node.js';
 import type { Branch, Predicate } from '../branch.js';
 import type { Rescue, RescueHandler, Catch } from '../rescue.js';
 import { RescueBlock } from '../rescue.js';
@@ -22,7 +23,11 @@ import { decodeResult } from './payload.js';
 export function runParallel(node: Parallel, focus: Focus, handlers: Darkcore.HandlerMap): Result {
   const branchResults: Result[] = [];
   const thrown: unknown[] = [];
-  for (const branch of node.branches) {
+  // Before worker limits existed, nested Parallel nodes were flattened on
+  // construction. Preserve that behavior for synchronous interpretation.
+  const flatten = (branches: readonly BerylxNode[]): BerylxNode[] =>
+    branches.flatMap((branch) => branch instanceof Parallel ? flatten(branch.branches) : [branch]);
+  for (const branch of flatten(node.branches)) {
     try {
       branchResults.push(runSubtree(branch, focus, handlers));
     } catch (error) {
